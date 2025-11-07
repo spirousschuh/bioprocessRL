@@ -53,12 +53,12 @@ def optimizer_reference(
         len(optimization_variable_lower_bounds)
     )
 
-    # Create a list of tuples for the bounds
+    # Create a list of tuples for the bounds, which is the format required by scipy.optimize
     optimization_bounds = [
         (optimization_variable_lower_bounds[i], optimization_variable_upper_bounds[i]) for i in range(len(optimization_variable_lower_bounds))
     ]
 
-    # Estimate the average time for one objective function evaluation
+    # Estimate the average time for one objective function evaluation to calibrate the optimizer's runtime
     test_start_time = time.time()
     obj_fun(
         optimization_variable_lower_bounds,
@@ -92,13 +92,13 @@ def optimizer_reference(
     )
     average_obj_fun_eval_time = (time.time() - test_start_time) / 3
 
-    # Calculate the number of function evaluations for global and local optimization
+    # Calculate the number of function evaluations for global and local optimization based on the allocated time
     num_global_evaluations = round(60 * optimization_options[0] / (average_obj_fun_eval_time * 1.2))
     num_local_evaluations = round(60 * optimization_options[1] / (average_obj_fun_eval_time * 1.2))
 
     print(f"Global evaluations: {num_global_evaluations}, Local evaluations: {num_local_evaluations}")
 
-    # Perform global optimization using dual annealing
+    # Perform global optimization using dual annealing to explore the search space broadly
     global_optimization_result = dual_annealing(
         lambda x: obj_fun(
             x,
@@ -117,7 +117,7 @@ def optimizer_reference(
     )
     print(f"Global optimization result: {global_optimization_result.x}")
 
-    # Perform local optimization using the result from the global optimization
+    # Perform local optimization using the result from the global optimization as a starting point to refine the solution
     local_optimization_result = minimize(
         lambda x: obj_fun(
             x,
@@ -166,18 +166,19 @@ def obj_fun(
     Returns:
         float: The value of the objective function (negative determinant of the FIM, with constraints).
     """
-    # Create a deep copy of the experiment data to avoid modifying the original dictionary
+    # Create a deep copy of the experiment data to avoid modifying the original dictionary during optimization
     experiment_data_copy = deepcopy(experiment_data)
 
-    # Update the feed pulse based on the optimization variable
+    # Update the feed pulse profile based on the current value of the optimization variable (growth rate)
     for i in range(control_inputs[0][0]):
         time_pulse = np.array(experiment_data_copy[i]["time_pulse"])
+        # Exponential feed profile based on the desired growth rate
         feed_pulse = (32.406) * optimization_variable[i] * np.exp(optimization_variable[i] * (time_pulse - time_pulse[0]))
-        feed_pulse = np.round(feed_pulse * 2) / 2
-        feed_pulse[feed_pulse < 5] = 5
+        feed_pulse = np.round(feed_pulse * 2) / 2  # Round to nearest 0.5
+        feed_pulse[feed_pulse < 5] = 5  # Enforce a minimum feed rate
         experiment_data_copy[i]["Feed_pulse"] = feed_pulse.tolist()
 
-    # Calculate the determinant of the Fisher Information Matrix (DIV)
+    # Calculate the determinant of the Fisher Information Matrix (DIV) for the current parameters
     simulated_states, div_value = calculate_DIV(
         time_vector,
         initial_conditions,
@@ -188,12 +189,13 @@ def obj_fun(
         initial_parameter_covariance,
     )
 
-    # Apply constraints based on the minimum dissolved oxygen tension (DOT)
+    # Apply constraints to the objective function based on the minimum dissolved oxygen tension (DOT)
     min_dot_values = []
     div_constraints = []
     for i in range(control_inputs[0][0]):
         min_dot = min(simulated_states["sample"][i][3])
         min_dot_values.append(min_dot)
+        # Penalize the objective function if DOT falls below a critical value (e.g., 20)
         if min_dot < 20:
             div_constraints.append((1 + (20 - min_dot) * 10) * 1e0)
         else:
@@ -207,7 +209,7 @@ def obj_fun(
         f"Min DOT constraint: {min(min_dot_values):.2f}"
     )
 
-    # Return the negative of the normalized DIV value
+    # Return the negative of the normalized DIV value because optimizers typically minimize
     return div_value * (-1) / np.sum(div_constraints_array)
 
 # %%
@@ -235,164 +237,194 @@ def calculate_DIV(
     Returns:
         tuple: A tuple containing the simulated states and the DIV value.
     """
-    # Simulate the process in parallel for all experiments
+    # Simulate the process in parallel for all experiments to get the necessary state trajectories
     simulated_states = simulate_parallel(
         time_vector, initial_conditions, control_inputs, model_parameters, experiment_data
     )
 
-    # Extract the DIV value from the simulation results
+    # Extract the DIV value from the simulation results, which is stored in the first sample of the first experiment
     div_value = simulated_states["sample"][0][0][-1]
 
     return simulated_states, div_value
 # %%
 
-def simulate_parallel(ts,XX0,uu,TH_param,DD):  
+def simulate_parallel(time_span, initial_conditions, control_inputs, model_parameters, experiment_data):
     """
     Simulates the bioreactor experiments in parallel.
 
     Args:
-        ts (np.array): Time span for the simulation.
-        XX0 (dict): Initial conditions for the state variables.
-        uu (dict): Control inputs.
-        TH_param (np.array): Model parameters.
-        DD (dict): Dictionary containing dynamic conditions.
+        time_span (np.array): Time span for the simulation.
+        initial_conditions (dict): Initial conditions for the state variables.
+        control_inputs (dict): Control inputs.
+        model_parameters (np.array): Model parameters.
+        experiment_data (dict): Dictionary containing dynamic conditions.
 
     Returns:
         dict: A dictionary containing the simulated states and sampled values.
     """
-    XX=deepcopy(XX0)
-    brxtor_list=np.arange(uu[0][0]).tolist()
-    
-    ty={}
-    
+    # Deepcopy the initial conditions to avoid modifying the original dictionary
+    simulated_states = deepcopy(initial_conditions)
+    # Get the list of bioreactors to simulate
+    bioreactor_list = np.arange(control_inputs[0][0]).tolist()
+
+    # Dictionary to store simulation results for each bioreactor
+    simulation_results = {}
+
+    # The code is commented out, but it suggests that parallel execution is possible using joblib
     # results = Parallel(n_jobs=-1)(
-    #     delayed(simulate_interval)(i1, ts,XX,uu,TH_param,DD)
-    #     for i1 in brxtor_list
+    #     delayed(simulate_interval)(i1, time_span, simulated_states, control_inputs, model_parameters, experiment_data)
+    #     for i1 in bioreactor_list
     # )
     
+    # for i1, result in zip(bioreactor_list, results):
+    #     simulation_results[i1] = result
 
-    # for i1, result in zip(brxtor_list, results):
-    #     ty[i1] = result
-        
-    for i1 in brxtor_list: 
-        ty[i1]=simulate_interval(i1, ts,XX,uu,TH_param,DD)
+    # Sequentially simulate each bioreactor experiment
+    for i in bioreactor_list:
+        simulation_results[i] = simulate_interval(i, time_span, simulated_states, control_inputs, model_parameters, experiment_data)
 
-        
-    for i1 in brxtor_list:
-        XX['state'][i1]=ty[i1][-1,1:]
-        
-        
-        for i2 in [0,1,2,4]:#range(4):
-            ts_sample_all=DD[i1]['time_sample'] 
-            ts_sample=ts_sample_all[(ts_sample_all>ts[0]) & (ts_sample_all<=ts[1])]
-            
-            sample_interp=np.interp(ts_sample,ty[i1][:,0],ty[i1][:,i2+1])
+    # Process the simulation results for each bioreactor
+    for i in bioreactor_list:
+        # Update the state of the bioreactor with the final state from the simulation interval
+        simulated_states['state'][i] = simulation_results[i][-1, 1:]
+
+        # Interpolate and store sample values for different states (Xv, S, A, P)
+        for state_index in [0, 1, 2, 4]:
+            all_sample_times = experiment_data[i]['time_sample']
+            # Filter sample times to be within the current simulation interval
+            sample_times_in_interval = all_sample_times[(all_sample_times > time_span[0]) & (all_sample_times <= time_span[1])]
+
+            # Interpolate simulation results at the specified sample times
+            interpolated_samples = np.interp(sample_times_in_interval, simulation_results[i][:, 0], simulation_results[i][:, state_index + 1])
             try:
-                XX['sample'][i1][i2]=XX['sample'][i1][i2]+sample_interp.tolist() 
-                
+                # Append interpolated samples to the existing list
+                simulated_states['sample'][i][state_index] = simulated_states['sample'][i][state_index] + interpolated_samples.tolist()
             except:
-                XX['sample'][i1][i2]=sample_interp.tolist()
-                
-                
-        ts_sensor_all=DD[i1]['time_sensor'] 
-        ts_sensor=ts_sensor_all[(ts_sensor_all>ts[0]) & (ts_sensor_all<=ts[1])]
-        sensor_interp=np.interp(ts_sensor,ty[i1][:,0],ty[i1][:,4])
+                # If it's the first set of samples, create a new list
+                simulated_states['sample'][i][state_index] = interpolated_samples.tolist()
+
+        # Interpolate and store sensor values (DOT)
+        all_sensor_times = experiment_data[i]['time_sensor']
+        # Filter sensor times to be within the current simulation interval
+        sensor_times_in_interval = all_sensor_times[(all_sensor_times > time_span[0]) & (all_sensor_times <= time_span[1])]
+        # Interpolate DOT values at sensor measurement times
+        interpolated_sensor_values = np.interp(sensor_times_in_interval, simulation_results[i][:, 0], simulation_results[i][:, 4])
 
         try:
-            XX['sample'][i1][3]=XX['sample'][i1][3]+sensor_interp.tolist() 
+            # Append interpolated sensor values to the existing list for DOT (index 3)
+            simulated_states['sample'][i][3] = simulated_states['sample'][i][3] + interpolated_sensor_values.tolist()
         except:
-            XX['sample'][i1][3]=sensor_interp.tolist()
+            # If it's the first set of sensor values, create a new list
+            simulated_states['sample'][i][3] = interpolated_sensor_values.tolist()
 
-    return XX
+    return simulated_states
 
 # %%
-def simulate_interval(index_mbr,ts,XX,uu,TH_param,DD):
+def simulate_interval(bioreactor_index, time_span, initial_conditions, control_inputs, model_parameters, experiment_data):
     """
     Simulates a single interval of the bioreactor.
 
     Args:
-        index_mbr (int): Index of the bioreactor.
-        ts (np.array): Time span for the simulation.
-        XX (dict): Initial conditions for the state variables.
-        uu (dict): Control inputs.
-        TH_param (np.array): Model parameters.
-        DD (dict): Dictionary containing dynamic conditions.
+        bioreactor_index (int): Index of the bioreactor.
+        time_span (np.array): Time span for the simulation.
+        initial_conditions (dict): Initial conditions for the state variables.
+        control_inputs (dict): Control inputs.
+        model_parameters (np.array): Model parameters.
+        experiment_data (dict): Dictionary containing dynamic conditions.
 
     Returns:
         np.array: An array containing the time and state variables over the interval.
     """
-    u=[uu[index_mbr][1]]+[index_mbr]+[uu[index_mbr][0]]+[uu[index_mbr][2]]+[1]
-    X = np.array(XX['state'][index_mbr])
-    D = DD[index_mbr]
-    t, y = function_simulation(ts, X, u, TH_param, D)
+    # Assemble the control input vector for the simulation function
+    u = [control_inputs[bioreactor_index][1]] + [bioreactor_index] + [control_inputs[bioreactor_index][0]] + [control_inputs[bioreactor_index][2]] + [1]
+    # Get the initial state for the current bioreactor
+    initial_state = np.array(initial_conditions['state'][bioreactor_index])
+    # Get the dynamic conditions for the current bioreactor
+    dynamic_conditions = experiment_data[bioreactor_index]
+    # Run the simulation for the given interval
+    time_points, state_trajectory = function_simulation(time_span, initial_state, u, model_parameters, dynamic_conditions)
 
-    return np.hstack((t[:,None],y))
+    # Combine time and state trajectories into a single array
+    return np.hstack((time_points[:, None], state_trajectory))
 
 # %%
-def function_simulation(ts0,Xo0,u0,THs,D0={}):
+def function_simulation(time_span, initial_state, control_input, model_parameters, dynamic_conditions={}):
     """
     Performs the simulation of the fed-batch process over a given time interval.
 
     Args:
-        ts0 (np.array): Time span for the simulation.
-        Xo0 (np.array): Initial state vector.
-        u0 (list): Control input parameters.
-        THs (np.array): Model parameters.
-        D0 (dict, optional): Dictionary containing dynamic conditions. Defaults to {}.
+        time_span (np.array): Time span for the simulation.
+        initial_state (np.array): Initial state vector.
+        control_input (list): Control input parameters.
+        model_parameters (np.array): Model parameters.
+        dynamic_conditions (dict, optional): Dictionary containing dynamic conditions. Defaults to {}.
 
     Returns:
         tuple: A tuple containing the time vector and the simulated state variables.
     """
-    TH1=THs[0:16]
+    # Extract the base model parameters
+    simulation_model_parameters = model_parameters[0:16]
 
+    # Append experiment-specific parameters (e.g., kla, k_sensor) to the parameter vector
+    simulation_model_parameters = np.append(
+        simulation_model_parameters,
+        model_parameters[16 + int(control_input[1])],
+    )
+    simulation_model_parameters = np.append(
+        simulation_model_parameters,
+        model_parameters[16 + int(control_input[1]) + int(control_input[2])],
+    )
 
-    TH1=np.append(TH1,THs[16+int(u0[1])])
-    TH1=np.append(TH1,THs[16+int(u0[1])+int(u0[2])]) 
-    
-    
-    ts_start=ts0[0]
-    ts_end=ts0[-1]
-    
-    time_pulse_all=np.array(D0['time_pulse'])
-    Feed_pulse_all=np.array(D0['Feed_pulse'])
-    
-    t_u=time_pulse_all[(time_pulse_all>=ts_start) & (time_pulse_all<=ts_end)]
-    uu_base_design=Feed_pulse_all[(time_pulse_all>=ts_start) & (time_pulse_all<=ts_end)]
- 
-    uu=uu_base_design
+    # Define the start and end times for the simulation interval
+    start_time = time_span[0]
+    end_time = time_span[-1]
 
-    if len(t_u)==0:
-        t_u=np.array([ts_start,ts_end])
-        uu=np.array([0,0])
+    # Extract the feed pulse times and rates from the dynamic conditions
+    all_time_pulses = np.array(dynamic_conditions['time_pulse'])
+    all_feed_pulses = np.array(dynamic_conditions['Feed_pulse'])
+
+    # Filter the feed pulses that occur within the current simulation interval
+    time_feed_in_interval = all_time_pulses[(all_time_pulses >= start_time) & (all_time_pulses <= end_time)]
+    feed_rate_in_interval = all_feed_pulses[(all_time_pulses >= start_time) & (all_time_pulses <= end_time)]
+
+    # If there are no feed pulses in the interval, simulate with zero feed
+    if len(time_feed_in_interval) == 0:
+        time_feed_in_interval = np.array([start_time, end_time])
+        feed_rate_in_interval = np.array([0, 0])
     else:
-        if ts_start<t_u[0]:
-            t_u=np.append(ts_start,t_u)
-            uu=np.append(0,uu)
-        if ts_end>t_u[-1]:
-            t_u=np.append(t_u,ts_end)
-            uu=np.append(uu,0)
+        # Ensure the simulation starts from the beginning of the interval, even if the first pulse is later
+        if start_time < time_feed_in_interval[0]:
+            time_feed_in_interval = np.append(start_time, time_feed_in_interval)
+            feed_rate_in_interval = np.append(0, feed_rate_in_interval)
+        # Ensure the simulation runs to the end of the interval, even if the last pulse is earlier
+        if end_time > time_feed_in_interval[-1]:
+            time_feed_in_interval = np.append(time_feed_in_interval, end_time)
+            feed_rate_in_interval = np.append(feed_rate_in_interval, 0)
 
-    Xo1=Xo0.copy()
-    
-    tt=np.array(ts_start)
-    yy=np.array([Xo1])
-    yy=yy.transpose()
-    
-    ni=0
-    
-    for i in uu[:-1]:
-        ts1=np.linspace(t_u[ni],t_u[ni+1],25+1)
-        Xo1[1]=Xo1[1]+uu[ni]*1e-6*u0[0]/0.01
-        t,y=intM(ts1,Xo1,u0,TH1)
-        Xo1=y[:,-1].copy()
+    # Initialize the state for the simulation loop
+    current_state = initial_state.copy()
 
-        
-        tt=np.append(tt,t[1:])
-        yy=np.append(yy,y[:,1:],axis=1)
-        ni=ni+1
+    # Initialize arrays to store the full time and state trajectories
+    time_trajectory = np.array(start_time)
+    state_trajectory = np.array([current_state]).transpose()
 
-    return tt,yy.transpose()
-# %%    
+    # Loop through the feed pulse intervals and simulate each one
+    for i in range(len(feed_rate_in_interval) - 1):
+        # Define the time points for the current sub-interval
+        sub_interval_time = np.linspace(time_feed_in_interval[i], time_feed_in_interval[i+1], 25 + 1)
+        # Apply the feed pulse by increasing the substrate concentration
+        current_state[1] = current_state[1] + feed_rate_in_interval[i] * 1e-6 * control_input[0] / 0.01
+        # Integrate the ODEs over the sub-interval
+        t, y = intM(sub_interval_time, current_state, control_input, simulation_model_parameters)
+        # Update the state for the next sub-interval
+        current_state = y[:, -1].copy()
+
+        # Append the results of the sub-interval to the overall trajectory
+        time_trajectory = np.append(time_trajectory, t[1:])
+        state_trajectory = np.append(state_trajectory, y[:, 1:], axis=1)
+
+    return time_trajectory, state_trajectory.transpose()
+# %%
 def odeFB(t,Xo,THo,u):
     """
     Defines the system of ordinary differential equations (ODEs) for the fed-batch bioreactor.
@@ -408,58 +440,65 @@ def odeFB(t,Xo,THo,u):
     """
 
     X=Xo.copy()
-    TH=THo.copy()
+    thetas = THo.copy()
+    # Ensure state variables are non-negative
     X = np.maximum(X, 1e-9)
     
-    Xv=X[0]
-    S=X[1]
-    A=X[2]
-    DOT=X[3] 
-    P=X[4]
-    mu_m=X[5]
+    # Unpack state variables for clarity
+    Xv=X[0]    # Viable cell concentration
+    S=X[1]     # Substrate concentration
+    A=X[2]     # By-product concentration
+    DOT=X[3]   # Dissolved Oxygen Tension
+    P=X[4]     # Product concentration
+    mu_m=X[5]  # Specific growth rate
 
+    # Clamp DOT to a maximum of 100
     DOT = np.minimum(DOT, 100)
             
-    qs_max=TH[0]
-    fracc_q_ox_max=TH[1]
-    qa_max=TH[2]
+    # Unpack model parameters
+    qs_max=thetas[0]
+    fracc_q_ox_max=thetas[1]
+    qa_max=thetas[2]
 
     
-    Ys_ox=TH[4]
-    Ya_p=TH[5]
-    Ya_c=TH[6]
-    Yo_ox=TH[8]
-    Yo_a=TH[9]
-    Yxs_of=TH[10]
+    Ys_ox=thetas[4]
+    Ya_p=thetas[5]
+    Ya_c=thetas[6]
+    Yo_ox=thetas[8]
+    Yo_a=thetas[9]
+    Yxs_of=thetas[10]
     
-    Ks=TH[11]
+    Ks=thetas[11]
     n_ox=4
     
-    Ka=TH[12]
-    Ksi=TH[3]
-    Kai=TH[7]
+    Ka=thetas[12]
+    Ksi=thetas[3]
+    Kai=thetas[7]
     Ko=0.1057
     
-    kla=TH[16]
-    k_sensor=TH[17]
+    kla=thetas[16]
+    k_sensor=thetas[17]
     
-    ky_1=TH[13] 
-    ky_2=TH[14]
-    ky_3=TH[15]
+    ky_1=thetas[13]
+    ky_2=thetas[14]
+    ky_3=thetas[15]
     
     DO_star=100
     H=13000#
     
+    # --- Kinetic model equations ---
+    # Substrate uptake rate
     qs=qs_max*S/(S+Ks)*Ksi/(Ksi+A)
     q_ox_max=fracc_q_ox_max*qs_max
     
+    # Steady-state calculations for oxygen transfer
     q_ox_ss=qs*(1/((qs/q_ox_max)**n_ox+1))**(1/n_ox)
     qac_ss=qa_max*A/(A+Ka)*Kai/(Kai+S)
     b_ss=Ko+(q_ox_ss*Yo_ox+qac_ss*Yo_a)*Xv*H/kla-DO_star
     c_ss=-DO_star*Ko
     DOT_ss=(-b_ss+(b_ss*b_ss-4*c_ss)**.5)/2
 
-    
+    # Oxygen-dependent rates
     q_ox=qs*(1/((qs/q_ox_max)**n_ox+1))**(1/n_ox)*DOT_ss/(DOT_ss+Ko)
     q_of=qs-q_ox
     
@@ -467,19 +506,20 @@ def odeFB(t,Xo,THo,u):
     
     qap=q_of*Ya_p
     
+    # Specific growth rate
     mu=q_ox*Ys_ox+qac*Ya_c+Yxs_of*q_of
 
+    # Product formation switch
     if t>=u[3]:
         s_prod=u[4]
     else:
         s_prod=0
         
-    
+    # Product formation rate
     f_qp=ky_1*mu_m/(mu_m+ky_2+(ky_3*mu_m)**2)
-
     q_prod=s_prod*f_qp
 
-
+    # --- Differential equations for state variables ---
     dXv=(mu)*Xv
     dS=-(qs)*Xv
     dA=qap*Xv-qac*Xv
@@ -508,9 +548,10 @@ def intM(ts0,Xo0,u0,TH0):
     Xo1=Xo0.tolist().copy()
 
 
-
+    # Use solve_ivp with the BDF method, which is suitable for stiff ODEs
     sol=solve_ivp(lambda t,y: odeFB(t,y,TH0,u0) ,tspan,Xo1,method="BDF", rtol=1e-5, atol=1e-5,t_eval=ts0)
     y_interm=sol.y
+    # Ensure that state variables do not become negative
     y_interm[y_interm<0]=0
     y_return=y_interm.copy()
 
