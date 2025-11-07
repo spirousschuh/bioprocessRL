@@ -4,12 +4,16 @@ import numpy as np
 import time
 from scipy.integrate import solve_ivp
 # from joblib import Parallel, delayed
+from collections import namedtuple
 
 from copy import deepcopy
 
 from scipy.optimize import shgo,dual_annealing,minimize,differential_evolution
 
 import matplotlib.pyplot as plt
+
+# Define the structure for control inputs for better readability
+ControlInputs = namedtuple('ControlInputs', ['feed_concentration', 'experiment_index', 'num_experiments', 'induction_time', 'product_switch'])
 
 # %%
 def optimizer_reference(
@@ -170,7 +174,7 @@ def obj_fun(
     experiment_data_copy = deepcopy(experiment_data)
 
     # Update the feed pulse profile based on the current value of the optimization variable (growth rate)
-    for i in range(control_inputs[0][0]):
+    for i in range(control_inputs[0].num_experiments):
         time_pulse = np.array(experiment_data_copy[i]["time_pulse"])
         # Exponential feed profile based on the desired growth rate
         feed_pulse = (32.406) * optimization_variable[i] * np.exp(optimization_variable[i] * (time_pulse - time_pulse[0]))
@@ -192,7 +196,7 @@ def obj_fun(
     # Apply constraints to the objective function based on the minimum dissolved oxygen tension (DOT)
     min_dot_values = []
     div_constraints = []
-    for i in range(control_inputs[0][0]):
+    for i in range(list(control_inputs.values())[0].num_experiments):
         min_dot = min(simulated_states["sample"][i][3])
         min_dot_values.append(min_dot)
         # Penalize the objective function if DOT falls below a critical value (e.g., 20)
@@ -265,7 +269,7 @@ def simulate_parallel(time_span, initial_conditions, control_inputs, model_param
     # Deepcopy the initial conditions to avoid modifying the original dictionary
     simulated_states = deepcopy(initial_conditions)
     # Get the list of bioreactors to simulate
-    bioreactor_list = np.arange(control_inputs[0][0]).tolist()
+    bioreactor_list = list(control_inputs.keys())
 
     # Dictionary to store simulation results for each bioreactor
     simulation_results = {}
@@ -281,7 +285,7 @@ def simulate_parallel(time_span, initial_conditions, control_inputs, model_param
 
     # Sequentially simulate each bioreactor experiment
     for i in bioreactor_list:
-        simulation_results[i] = simulate_interval(i, time_span, simulated_states, control_inputs, model_parameters, experiment_data)
+        simulation_results[i] = simulate_interval(i, time_span, simulated_states, control_inputs[i], model_parameters, experiment_data)
 
     # Process the simulation results for each bioreactor
     for i in bioreactor_list:
@@ -335,14 +339,14 @@ def simulate_interval(bioreactor_index, time_span, initial_conditions, control_i
     Returns:
         np.array: An array containing the time and state variables over the interval.
     """
-    # Assemble the control input vector for the simulation function
-    u = [control_inputs[bioreactor_index][1]] + [bioreactor_index] + [control_inputs[bioreactor_index][0]] + [control_inputs[bioreactor_index][2]] + [1]
     # Get the initial state for the current bioreactor
     initial_state = np.array(initial_conditions['state'][bioreactor_index])
     # Get the dynamic conditions for the current bioreactor
     dynamic_conditions = experiment_data[bioreactor_index]
     # Run the simulation for the given interval
-    time_points, state_trajectory = function_simulation(time_span, initial_state, u, model_parameters, dynamic_conditions)
+    time_points, state_trajectory = function_simulation(
+        time_span, initial_state, control_inputs, model_parameters, dynamic_conditions
+    )
 
     # Combine time and state trajectories into a single array
     return np.hstack((time_points[:, None], state_trajectory))
@@ -355,7 +359,7 @@ def function_simulation(time_span, initial_state, control_input, model_parameter
     Args:
         time_span (np.array): Time span for the simulation.
         initial_state (np.array): Initial state vector.
-        control_input (list): Control input parameters.
+        control_input (ControlInputs): Control input parameters as a namedtuple.
         model_parameters (np.array): Model parameters.
         dynamic_conditions (dict, optional): Dictionary containing dynamic conditions. Defaults to {}.
 
@@ -368,11 +372,12 @@ def function_simulation(time_span, initial_state, control_input, model_parameter
     # Append experiment-specific parameters (e.g., kla, k_sensor) to the parameter vector
     simulation_model_parameters = np.append(
         simulation_model_parameters,
-        model_parameters[16 + int(control_input[1])],
+        model_parameters[16 + int(control_input.experiment_index)],
     )
+    # TODO: the indexing is broken here
     simulation_model_parameters = np.append(
         simulation_model_parameters,
-        model_parameters[16 + int(control_input[1]) + int(control_input[2])],
+        model_parameters[16 + int(control_input.experiment_index) + int(control_input.num_experiments)]
     )
 
     # Define the start and end times for the simulation interval
@@ -413,7 +418,7 @@ def function_simulation(time_span, initial_state, control_input, model_parameter
         # Define the time points for the current sub-interval
         sub_interval_time = np.linspace(time_feed_in_interval[i], time_feed_in_interval[i+1], 25 + 1)
         # Apply the feed pulse by increasing the substrate concentration
-        current_state[1] = current_state[1] + feed_rate_in_interval[i] * 1e-6 * control_input[0] / 0.01
+        current_state[1] = current_state[1] + feed_rate_in_interval[i] * 1e-6 * control_input.feed_concentration / 0.01
         # Integrate the ODEs over the sub-interval
         t, y = intM(sub_interval_time, current_state, control_input, simulation_model_parameters)
         # Update the state for the next sub-interval
@@ -433,7 +438,7 @@ def odeFB(t,Xo,THo,u):
         t (float): Current time.
         Xo (np.array): State vector [Xv, S, A, DOT, P, mu_m].
         THo (np.array): Model parameters.
-        u (list): Control inputs.
+        u (ControlInputs): Control inputs as a namedtuple.
 
     Returns:
         np.array: The derivatives of the state variables.
@@ -510,8 +515,8 @@ def odeFB(t,Xo,THo,u):
     mu=q_ox*Ys_ox+qac*Ya_c+Yxs_of*q_of
 
     # Product formation switch
-    if t>=u[3]:
-        s_prod=u[4]
+    if t>=u.induction_time:
+        s_prod=u.product_switch
     else:
         s_prod=0
         
@@ -530,14 +535,14 @@ def odeFB(t,Xo,THo,u):
     dX=np.array([dXv,dS,dA,dDOT,dP,dmu_m])
     return dX
 # %%     
-def intM(ts0,Xo0,u0,TH0):    
+def intM(ts0,Xo0,u0,TH0):
     """
     Integrates the ODEs over a given time span.
 
     Args:
         ts0 (np.array): Time span for the integration.
         Xo0 (np.array): Initial state vector.
-        u0 (list): Control inputs.
+        u0 (ControlInputs): Control inputs as a namedtuple.
         TH0 (np.array): Model parameters.
 
     Returns:
@@ -555,4 +560,4 @@ def intM(ts0,Xo0,u0,TH0):
     y_interm[y_interm<0]=0
     y_return=y_interm.copy()
 
-    return sol.t,y_return
+    return sol.t, y_return

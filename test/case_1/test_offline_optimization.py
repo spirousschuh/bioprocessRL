@@ -1,5 +1,7 @@
 import numpy as np
 import method_kiwiGym
+from method_kiwiGym import ControlInputs
+
 
 def test_optimizer_reference_run():
     """
@@ -34,7 +36,16 @@ def test_optimizer_reference_run():
         'sample': {0: {}}
     }
 
-    control_inputs = {0: [number_of_experiments, 200, 10]}
+    control_inputs = {
+        0:
+            ControlInputs(
+                experiment_index=0,
+                num_experiments=number_of_experiments,
+                feed_concentration=200,
+                induction_time=1000.,
+                product_switch=0,
+            )
+    }
 
     model_parameters = np.array(
         [1.2578, 0.43041, 0.6439, 7.0767, 0.4063, 0.1143 * 4, 0.1848 * 4, .4242, 1.586 * .7, 1.5874 * .7,

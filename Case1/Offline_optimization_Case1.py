@@ -26,8 +26,14 @@ for i in range(n_exp):
     XX0['t']=ts[0] # Initial time
     XX0['state'][i]=[0.18,4,0,100,0,.0] # Initial state: [Xv, S, A, DOT, P, mu_m]
     XX0['sample'][i]={} # Initialize sample dictionary for the experiment
-    uu[i]=[n_exp,200,10] # Control input parameters
-
+    # uu[i]=[n_exp,200,10] # Control input parameters
+    uu[i] =method_kiwiGym.ControlInputs(
+        num_experiments=n_exp,
+        feed_concentration=200,
+        experiment_index=i,
+        induction_time=10.,
+        product_switch=0,
+    )
     # Calculate the feed profile based on an exponential growth model
     feed_profile_i=(32.406)*ux[i]*np.exp(ux[i]*(time_pulses-time_pulses[0]))
     feed_profile_i=np.round(feed_profile_i*2)/2 # Round the feed rate

@@ -1,6 +1,7 @@
 import pytest
 import numpy as np
-from method_kiwiGym import intM, function_simulation
+from method_kiwiGym import intM, function_simulation, ControlInputs
+
 
 @pytest.fixture
 def default_initial_state():
@@ -10,8 +11,8 @@ def default_initial_state():
 @pytest.fixture
 def default_control_inputs():
     """Provides a default set of control inputs."""
-    # Corresponds to [feed_concentration, experiment_index, num_experiments, some_factor, product_switch]
-    return [200, 0, 1, 10, 1]
+    # Corresponds to [feed_concentration, experiment_index, num_experiments, induction_time, product_switch]
+    return ControlInputs(200, 0, 1, 10, 1)
 
 @pytest.fixture
 def default_model_parameters():
