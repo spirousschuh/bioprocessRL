@@ -94,7 +94,8 @@ class kiwiGymEnv_CS1(gym.Env):
             print('Action: ',action_val)
             self.render()
 
-        obs_corrected=obs/self.observation_upper_bound
+        # Ensure obs and observation_upper_bound are numeric before division
+        obs_corrected = obs.astype(np.float64) / self.observation_upper_bound.astype(np.float64)
         return obs_corrected, reward, terminated, False, info
 
     def render(self):

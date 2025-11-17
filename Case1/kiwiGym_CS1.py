@@ -44,7 +44,15 @@ class kiwiGym:
             XX0['t']=self.time_interval[0]
             XX0['state'][i]=[0.18,4,0,100,0,.01]
             XX0['sample'][i]={0:[],1:[],2:[],3:[],4:[],}
-            uu[i]=[self.number_mbr,200,10]
+            # uu[i]=[self.number_mbr,200,10]
+            uu[i] = method_kiwiGym.ControlInputs(
+                experiment_index=i,
+                num_experiments=self.number_mbr,
+                feed_concentration=200,
+                induction_time=10.,
+                product_switch=0,
+            )
+
             
             feed_profile_i=(32.406)*self.mu_reference[i]*np.exp(self.mu_reference[i]*(self.time_pulses-self.time_pulses[0]))
             feed_profile_i=np.round(feed_profile_i*2)/2
@@ -82,16 +90,16 @@ class kiwiGym:
             XX0['sample'][i]={0:[],1:[],2:[],3:[],4:[],}
         self.XX=deepcopy(XX0)
         self.DD_historic=deepcopy(self.DD)
-        self.obs=np.zeros([self.uu[0][0]*(4+25*0+1)])#.tolist()
+        self.obs=np.zeros([self.uu[0].num_experiments*(4+25*0+1)])#.tolist()
         self.terminated=False
         return 
 # %%    
     def render(self):
         #Show DOT and Biomass
-        for i2 in range(self.uu[0][0]):
+        for i2 in range(self.uu[0].num_experiments):
             plt.plot(self.XX['sample'][i2][3],'.')#
         plt.show()
-        for i2 in range(self.uu[0][0]):
+        for i2 in range(self.uu[0].num_experiments):
             plt.plot(self.XX['sample'][i2][0],'o')
         plt.show()
         print('time: ',self.time_current,' done: ',self.terminated,'reward: ',self.reward)
@@ -107,7 +115,8 @@ class kiwiGym:
 
             action=action_step
             time_step_before=1
-            for i in range(self.uu[0][0]):
+            for i in range(self.uu[0].num_experiments):
+                # print(DD_action)
                 t_pulse=np.array(DD_action[i]['time_pulse'])
                 DD_ref=np.array(DD_action[i]['Feed_pulse'])
                 
@@ -125,7 +134,13 @@ class kiwiGym:
 
         #Apply action during time interval
 
-        XX_plus1=method_kiwiGym.simulate_parallel(self.time_interval,self.XX,self.uu,self.TH_param,self.DD_historic)
+        XX_plus1 = method_kiwiGym.simulate_parallel(
+            self.time_interval,
+            self.XX,
+            self.uu,
+            self.TH_param,
+            self.DD_historic,
+        )
         self.XX=XX_plus1
         self.time_current=self.time_interval[1]
         
@@ -137,7 +152,7 @@ class kiwiGym:
             
         XX_obs=XX_obs[:,None]
         x3=[]
-        for i1 in range(self.uu[0][0]): 
+        for i1 in range(self.uu[0].num_experiments):
             for i2 in [0,3]:
                 if i2==0:
                     t1=np.array(self.DD_historic[i1]['time_sample'])
