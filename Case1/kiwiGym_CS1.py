@@ -19,7 +19,8 @@ class kiwiGym:
             sample_offsets=None,
             time_batch=5,
             mu_reference=None,
-            model_parameters0=None,
+            initial_model_parameters=None,
+            sampling_times_per_hour=25,
     ):
 
         # Use safe defaults for list-like arguments
@@ -30,7 +31,7 @@ class kiwiGym:
 
         # Define model parameters (bioprocess / kinetics / sensor params)
         # model_parameters is a 1D array that holds kinetic and sensor parameters
-        self.model_parameters = np.array(model_parameters0) or np.array([
+        self.model_parameters = np.array(initial_model_parameters) or np.array([
             1.2578, 0.43041, 0.6439,  7.0767,  0.4063,  0.1143*4,  0.1848*4,
             .4242,    1.586*.7, 1.5874*.7,  0.3322*.75,  0.0371,  0.0818,    9000,
             .1, 5
@@ -82,7 +83,7 @@ class kiwiGym:
                 'time_pulse': self.pulse_times.tolist(),
                 'Feed_pulse': feed_profile_values.tolist(),
                 'time_sample': np.arange(self.final_time) + self.sample_offsets[exp_idx],
-                'time_sensor': np.linspace(0.04, self.final_time, 25 * round(self.final_time)),
+                'time_sensor': np.linspace(0.04, self.final_time, sampling_times_per_hour * round(self.final_time)),
             }
             
 
@@ -198,7 +199,10 @@ class kiwiGym:
                 values = np.array(self.state['sample'][exp_idx][measurement_channel])
                 # restrict to values within the current interval
                 time_points_in_window = time_points[time_points <= self.time_interval[1]]
-                values_in_window = values[(time_points_in_window > self.time_interval[0]) & (time_points_in_window <= self.time_interval[1])]
+                values_in_window = values[
+                    (time_points_in_window > self.time_interval[0])
+                    & (time_points_in_window <= self.time_interval[1])
+                ]
 
                 # For DOT we store a single aggregated value (minimum over the interval)
                 if measurement_channel == 3:
