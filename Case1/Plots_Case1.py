@@ -1,13 +1,11 @@
 from stable_baselines3 import PPO
 import gymnasium as gym
-import pandas as pd
-import numpy as np
+
 import matplotlib.pyplot as plt
 import seaborn as sns
-import json
 import os
 
-import KiwiGym_env_CS1
+from Case1 import KiwiGym_env_CS1
 
 
 os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
@@ -35,20 +33,19 @@ def plot_model_comparative():
     
     env = gym.make('kiwiGym-CS1') 
     obs,_=env.reset()    
-    TH_env=env.unwrapped.kiwiGym.TH_param
 
     experiments = 100
     models = ["model_CS1_0_final", "model_CS1_final", "no_agent"]            
     results = {model_name: [] for model_name in models}
 
-    for a in range(experiments):
+    for _ in range(experiments):
         obs,_ = env.reset() 
         TH_env=env.unwrapped.kiwiGym.TH_param
     
         for model_name in models:
 
             if model_name != "no_agent":
-                model=PPO.load(os.path.join(load_dir,model_name),device="cpu")
+                model=PPO.load(os.path.join(load_dir,model_name),device="cuda")
 
             obs,_ = env.reset()         
             env.unwrapped.kiwiGym.TH_param=TH_env
@@ -59,7 +56,6 @@ def plot_model_comparative():
                 else:
                     action, _ = model.predict(obs,deterministic=True)  
 
-                # print(action)
                 obs, reward, terminated, _, _ = env.step(action)
 
                 if(terminated):

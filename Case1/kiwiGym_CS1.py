@@ -2,30 +2,29 @@
 import numpy as np
 from copy import deepcopy
 
-import method_kiwiGym
+from Case1 import method_kiwiGym
 
 import matplotlib.pyplot as plt
 # %%
 
     
 class kiwiGym:
-    def __init__(self,render_mode=None,TH_param0=[]):
+    def __init__(
+            self,
+            render_mode=None,
+            time_current=0,
+            number_mbr=1,
+            time_final=14,
+            time_step=1,
+            sample_schedule=[0.99, 0.99, 0.99],
+            time_batch=5,
+            mu_reference=[0.145],
+            TH_param0=None,
+    ):
 
-        time_current=0
-        number_mbr=1
-        time_final=14
-        time_step=1
-        sample_schedule=[0.99,0.99,0.99]
-        time_batch=5
-        mu_reference=[0.145]
-
-        
         #Define Model Parameters
-        if len(TH_param0)==0:
-            self.TH_param=np.array([1.2578, 0.43041, 0.6439,  7.0767,  0.4063,  0.1143*4,  0.1848*4,    .4242,    1.586*.7, 1.5874*.7,  0.3322*.75,  0.0371,  0.0818,    9000, .1, 5]+[850]*number_mbr+[90]*number_mbr)
-        else:
-            self.TH_param=np.array(TH_param0)   
-        
+        self.TH_param = np.array(TH_param0) or np.array([1.2578, 0.43041, 0.6439,  7.0767,  0.4063,  0.1143*4,  0.1848*4,    .4242,    1.586*.7, 1.5874*.7,  0.3322*.75,  0.0371,  0.0818,    9000, .1, 5]+[850]*number_mbr+[90]*number_mbr)
+
         self.number_mbr=number_mbr
         self.time_final=time_final
         self.time_current=time_current
@@ -44,7 +43,7 @@ class kiwiGym:
             XX0['t']=self.time_interval[0]
             XX0['state'][i]=[0.18,4,0,100,0,.01]
             XX0['sample'][i]={0:[],1:[],2:[],3:[],4:[],}
-            # uu[i]=[self.number_mbr,200,10]
+
             uu[i] = method_kiwiGym.ControlInputs(
                 experiment_index=i,
                 num_experiments=self.number_mbr,
@@ -58,8 +57,12 @@ class kiwiGym:
             feed_profile_i=np.round(feed_profile_i*2)/2
             feed_profile_i[feed_profile_i<5]=5
             
-            DD[i]={'time_pulse':self.time_pulses.tolist(),'Feed_pulse':feed_profile_i.tolist(),'time_sample':np.arange(self.time_final)+self.sample_schedule[i],
-                   'time_sensor':np.linspace(0.04,self.time_final,25*round(self.time_final))}
+            DD[i]={
+                'time_pulse':self.time_pulses.tolist(),
+                'Feed_pulse':feed_profile_i.tolist(),
+                'time_sample':np.arange(self.time_final)+self.sample_schedule[i],
+                'time_sensor':np.linspace(0.04,self.time_final,25*round(self.time_final)),
+            }
             
 
         self.XX0=deepcopy(XX0)
@@ -204,7 +207,7 @@ class kiwiGym:
             self.reward=DIV_normalized
             
 
-            print("reward: ",self.reward,"Biomass: ",DIV_min,"Const: ", DIV_constrain)
+            print("reward: ", self.reward , "Biomass: ", DIV_min, "Constrain: ", DIV_constrain)
 
         else:
             self.terminated=False

@@ -6,11 +6,11 @@ from gymnasium.utils.env_checker import check_env
 
 import numpy as np
 
-from kiwiGym_CS1 import kiwiGym
+from Case1.kiwiGym_CS1 import kiwiGym
 # %%
 register(
     id='kiwiGym-CS1',                                
-    entry_point='KiwiGym_env_CS1:kiwiGymEnv_CS1', 
+    entry_point='Case1.KiwiGym_env_CS1:kiwiGymEnv_CS1',
 )
 
 

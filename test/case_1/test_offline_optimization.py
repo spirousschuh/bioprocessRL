@@ -1,6 +1,6 @@
 import numpy as np
-import method_kiwiGym
-from method_kiwiGym import ControlInputs
+from Case1 import method_kiwiGym
+from Case1.method_kiwiGym import ControlInputs
 
 
 def test_optimizer_reference_run():

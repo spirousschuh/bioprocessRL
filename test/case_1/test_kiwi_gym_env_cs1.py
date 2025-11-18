@@ -1,7 +1,7 @@
 import numpy as np
 import gymnasium as gym
 from gymnasium.utils.env_checker import check_env
-import  KiwiGym_env_CS1  # ensures registration of `kiwiGym-CS1`
+from Case1 import KiwiGym_env_CS1  # ensures registration of `kiwiGym-CS1`
 
 def test_kiwigym_cs1_env_basic():
     env = gym.make('kiwiGym-CS1')

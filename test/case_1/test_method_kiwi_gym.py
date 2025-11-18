@@ -1,6 +1,6 @@
 import pytest
 import numpy as np
-from method_kiwiGym import intM, function_simulation, ControlInputs
+from Case1.method_kiwiGym import intM, function_simulation, ControlInputs
 
 
 @pytest.fixture
