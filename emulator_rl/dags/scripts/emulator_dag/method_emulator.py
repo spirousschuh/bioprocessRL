@@ -14,12 +14,12 @@ import json
 from function_simulation import function_simulation
 
 # %% Simulator
-def simulate(time_initial,time_final,EMULATOR_state,EMULATOR_design,EMULATOR_config):
+def simulate(time_initial,final_time,EMULATOR_state,EMULATOR_design,EMULATOR_config):
     NEW_EMULATOR_state=deepcopy(EMULATOR_state)
     
     nn=0   
     for i1 in EMULATOR_config['Brxtor_list']:
-        ts0=np.array([time_initial,time_final])
+        ts0=np.array([time_initial,final_time])
         Xo0=np.array([])
         for i2 in EMULATOR_config['Species_list']:
             Xo0=np.append(Xo0,EMULATOR_state[i1]['Current'][i2])
@@ -43,7 +43,7 @@ def simulate(time_initial,time_final,EMULATOR_state,EMULATOR_design,EMULATOR_con
         nn=nn+1
     return NEW_EMULATOR_state
 # %% Sampler
-def sample(time_initial,time_final,EMULATOR_state,EMULATOR_design,EMULATOR_config):
+def sample(time_initial,final_time,EMULATOR_state,EMULATOR_design,EMULATOR_config):
     NEW_EMULATOR_state=deepcopy(EMULATOR_state)
 
     for i1 in EMULATOR_config['Brxtor_list']:
@@ -53,7 +53,7 @@ def sample(time_initial,time_final,EMULATOR_state,EMULATOR_design,EMULATOR_confi
             else:
                 ts_sample_all=np.array(EMULATOR_design[i1]['time_sample'][i2])*(1+np.random.normal(0,1,size=len(np.array(EMULATOR_design[i1]['time_sample'][i2])))*EMULATOR_config['Noise_time']*0)
            
-            ts_sample=ts_sample_all[(ts_sample_all>time_initial) & (ts_sample_all<=time_final)]
+            ts_sample=ts_sample_all[(ts_sample_all>time_initial) & (ts_sample_all<=final_time)]
 
             tX_state=EMULATOR_state[i1]['All'][i2]['time']
             X_state=EMULATOR_state[i1]['All'][i2]['Value']
@@ -70,7 +70,7 @@ def sample(time_initial,time_final,EMULATOR_state,EMULATOR_design,EMULATOR_confi
     
     return NEW_EMULATOR_state
 # %% Write
-def write(filename,time_initial,time_final,EMULATOR_state,EMULATOR_design,EMULATOR_config):
+def write(filename,time_initial,final_time,EMULATOR_state,EMULATOR_design,EMULATOR_config):
     n_check=0
     while n_check==0:
         try:    
@@ -91,7 +91,7 @@ def write(filename,time_initial,time_final,EMULATOR_state,EMULATOR_design,EMULAT
                 Xsf_new=np.array(EMULATOR_state[i1]['Sample'][i2]['Value'])*2.7027
                 
                 time_samples_iter=np.array(time_samples_analysis)
-                time_samples_iter=time_samples_iter[time_samples_iter<=(time_final-1)]
+                time_samples_iter=time_samples_iter[time_samples_iter<=(final_time-1)]
                 if len(time_samples_iter)>0:
                     time_analysis=time_samples_iter[-1]
                     Xsf_new=Xsf_new[ts_new<=time_analysis]
@@ -118,8 +118,8 @@ def write(filename,time_initial,time_final,EMULATOR_state,EMULATOR_design,EMULAT
                 ts_new=np.array(EMULATOR_state[i1]['Sample'][i2]['time'])
                 Xsf_new=np.array(EMULATOR_state[i1]['Sample'][i2]['Value'])
                 
-                Xsf_new=Xsf_new[(ts_new>time_initial) & (ts_new<=time_final)]
-                ts_new=ts_new[(ts_new>time_initial) & (ts_new<=time_final)]
+                Xsf_new=Xsf_new[(ts_new>time_initial) & (ts_new<=final_time)]
+                ts_new=ts_new[(ts_new>time_initial) & (ts_new<=final_time)]
                 
                 tsf=tsf+(ts_new*3600).tolist()
                 Xsf=Xsf+Xsf_new.tolist()
@@ -137,7 +137,7 @@ def write(filename,time_initial,time_final,EMULATOR_state,EMULATOR_design,EMULAT
                 Xsf_new=np.array(EMULATOR_state[i1]['Sample'][i2]['Value'])
                 
                 time_samples_iter=np.array(time_samples_analysis)
-                time_samples_iter=time_samples_iter[time_samples_iter<=(time_final-1)]
+                time_samples_iter=time_samples_iter[time_samples_iter<=(final_time-1)]
                 if len(time_samples_iter)>0:
                     time_analysis=time_samples_iter[-1]
                     Xsf_new=Xsf_new[ts_new<=time_analysis]
@@ -147,8 +147,8 @@ def write(filename,time_initial,time_final,EMULATOR_state,EMULATOR_design,EMULAT
                     
                 else:
                     tsf=[]
-                # Xsf_new=Xsf_new[(ts_new>time_initial) & (ts_new<=time_final)]
-                # ts_new=ts_new[(ts_new>time_initial) & (ts_new<=time_final)]
+                # Xsf_new=Xsf_new[(ts_new>time_initial) & (ts_new<=final_time)]
+                # ts_new=ts_new[(ts_new>time_initial) & (ts_new<=final_time)]
                 
                 # tsf=tsf+(ts_new*3600).tolist()
                 # Xsf=Xsf+Xsf_new.tolist()
@@ -166,8 +166,8 @@ def write(filename,time_initial,time_final,EMULATOR_state,EMULATOR_design,EMULAT
         ts_new=np.array(EMULATOR_design[i1]['Pulses']['time_pulse'])#np.array(EMULATOR_state[i1]['Sample'][i2]['time'])
         Xsf_pulses=np.array(EMULATOR_design[i1]['Pulses']['Feed_pulse'])#np.array(EMULATOR_state[i1]['Sample'][i2]['Value'])
         
-        Xsf_pulses_new=Xsf_pulses[(ts_new>time_initial) & (ts_new<=time_final)]
-        ts_new=ts_new[(ts_new>time_initial) & (ts_new<=time_final)].copy()
+        Xsf_pulses_new=Xsf_pulses[(ts_new>time_initial) & (ts_new<=final_time)]
+        ts_new=ts_new[(ts_new>time_initial) & (ts_new<=final_time)].copy()
 
         tsf=tsf+(ts_new*3600).tolist()
         if len(Xsf)==1:

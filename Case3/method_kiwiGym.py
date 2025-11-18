@@ -11,7 +11,7 @@ from scipy.optimize import shgo,dual_annealing,minimize,differential_evolution
 
 import matplotlib.pyplot as plt
 # %% 
-def optimizer_reference(LB,UB,optim_options,tt,XX0,uu,TH_param0,DD,Cov_y,Cov_TH0=[]):
+def optimizer_reference(LB,UB,optim_options,tt,initial_states,control_inputs,model_parameters0,feed_profiles,Cov_y,Cov_TH0=[]):
    
     ux_lb=np.array(LB)
     ux_ub=np.array(UB)
@@ -22,9 +22,9 @@ def optimizer_reference(LB,UB,optim_options,tt,XX0,uu,TH_param0,DD,Cov_y,Cov_TH0
         bounds_ux[i1]=(ux_lb[i1],ux_ub[i1])
     
     t_test0=time.time()    
-    e1=obj_fun(ux_lb,tt,XX0,uu,TH_param0,DD,Cov_y,Cov_TH0)
-    e2=obj_fun(ux_ub,tt,XX0,uu,TH_param0,DD,Cov_y,Cov_TH0)
-    e3=obj_fun(ux_mean,tt,XX0,uu,TH_param0,DD,Cov_y,Cov_TH0) 
+    e1=obj_fun(ux_lb,tt,initial_states,control_inputs,model_parameters0,feed_profiles,Cov_y,Cov_TH0)
+    e2=obj_fun(ux_ub,tt,initial_states,control_inputs,model_parameters0,feed_profiles,Cov_y,Cov_TH0)
+    e3=obj_fun(ux_mean,tt,initial_states,control_inputs,model_parameters0,feed_profiles,Cov_y,Cov_TH0) 
     t_test=(time.time()-t_test0)/3
 
     n_fun_eval0=round(60*optim_options[0]/(t_test*1.2))
@@ -32,32 +32,32 @@ def optimizer_reference(LB,UB,optim_options,tt,XX0,uu,TH_param0,DD,Cov_y,Cov_TH0
     
     print(n_fun_eval0,n_fun_eval1)  
     
-    ux_opt0 = dual_annealing(lambda ux: obj_fun(ux,tt,XX0,uu,TH_param0,DD,Cov_y,Cov_TH0), bounds=bounds_ux, maxfun=n_fun_eval0, no_local_search=True)
+    ux_opt0 = dual_annealing(lambda ux: obj_fun(ux,tt,initial_states,control_inputs,model_parameters0,feed_profiles,Cov_y,Cov_TH0), bounds=bounds_ux, maxfun=n_fun_eval0, no_local_search=True)
     print('global opt ',ux_opt0.x)
-    ux_opt1 = minimize(lambda ux: obj_fun(ux,tt,XX0,uu,TH_param0,DD,Cov_y,Cov_TH0), ux_opt0.x, bounds=bounds_ux, method='Nelder-Mead', options={'maxfev': n_fun_eval1})
+    ux_opt1 = minimize(lambda ux: obj_fun(ux,tt,initial_states,control_inputs,model_parameters0,feed_profiles,Cov_y,Cov_TH0), ux_opt0.x, bounds=bounds_ux, method='Nelder-Mead', options={'maxfev': n_fun_eval1})
 
     print('local opt ',ux_opt1.x)
     return ux_opt1        
 
 # %%
 
-def obj_fun(ux,tt,XX0,uu,TH_param0,DD,Cov_y,Cov_TH0=[]):
-    DDx=deepcopy(DD)
+def obj_fun(ux,tt,initial_states,control_inputs,model_parameters0,feed_profiles,Cov_y,Cov_TH0=[]):
+    feed_profilesx=deepcopy(feed_profiles)
         
-    for i2 in range(uu[0][0]):
-        t_pulse=np.array(DDx[i2]['time_pulse'])
+    for i2 in range(control_inputs[0][0]):
+        t_pulse=np.array(feed_profilesx[i2]['time_pulse'])
         Feed_pulse=(36.33*0+32.406)*ux[i2]*np.exp(ux[i2]*(t_pulse-t_pulse[0]))
         Feed_pulse=np.round(Feed_pulse*2)/2
         Feed_pulse[Feed_pulse<5]=5
-        DDx[i2]['Feed_pulse']=Feed_pulse.tolist()
+        feed_profilesx[i2]['Feed_pulse']=Feed_pulse.tolist()
     
         
-    Si,Q,FIM,XX_th0,traceFIM,FIM_crit,ei=calculate_FIM(tt,XX0,uu,TH_param0,DDx,Cov_y,Cov_TH0)
+    Si,Q,FIM,state_th0,traceFIM,FIM_crit,ei=calculate_FIM(tt,initial_states,control_inputs,model_parameters0,feed_profilesx,Cov_y,Cov_TH0)
     
     DOT_min=[]
     FIM_constrain=[]
-    for i2 in range(uu[0][0]):
-        dot_min=min(XX_th0['sample'][i2][3])
+    for i2 in range(control_inputs[0][0]):
+        dot_min=min(state_th0['sample'][i2][3])
         DOT_min.append(dot_min)
         if dot_min<20:
             # FIM_crit=1e-11
@@ -70,49 +70,49 @@ def obj_fun(ux,tt,XX0,uu,TH_param0,DD,Cov_y,Cov_TH0=[]):
     return FIM_crit*(1)/3*np.sum(FIM_constr)
 
 # %%
-def calculate_FIM(tt,XX0,uu,TH_param0,DD,Cov_y=[],Cov_TH0=[]):
-    XX_th0=simulate_parallel(tt,XX0,uu,TH_param0,DD)
+def calculate_FIM(tt,initial_states,control_inputs,model_parameters0,feed_profiles,Cov_y=[],Cov_TH0=[]):
+    state_th0=simulate_parallel(tt,initial_states,control_inputs,model_parameters0,feed_profiles)
 
     Si={}
-    for i1 in range(len(TH_param0)):
+    for i1 in range(len(model_parameters0)):
 
-        TH_param=TH_param0.copy()
-        TH_param[i1]=TH_param0[i1]*(1+1e-5)
+        model_parameters=model_parameters0.copy()
+        model_parameters[i1]=model_parameters0[i1]*(1+1e-5)
 
-        XX_th=simulate_parallel(tt,XX0,uu,TH_param,DD)
+        state_th=simulate_parallel(tt,initial_states,control_inputs,model_parameters,feed_profiles)
 
         Si[i1]={}
 
-        for i2 in range(uu[0][0]):
+        for i2 in range(control_inputs[0][0]):
             Si[i1][i2]={}
             for i3 in range(5):
                 if i2==1:
                     if i1==17:
-                        Si[16][i2][i3]=(np.array(XX_th['sample'][i2][i3])-np.array(XX_th0['sample'][i2][i3]))/(TH_param[i1]-TH_param0[i1]+1e-9)*TH_param0[i1]
+                        Si[16][i2][i3]=(np.array(state_th['sample'][i2][i3])-np.array(state_th0['sample'][i2][i3]))/(model_parameters[i1]-model_parameters0[i1]+1e-9)*model_parameters0[i1]
                     elif i1==20:
-                        Si[17][i2][i3]=(np.array(XX_th['sample'][i2][i3])-np.array(XX_th0['sample'][i2][i3]))/(TH_param[i1]-TH_param0[i1]+1e-9)*TH_param0[i1] 
+                        Si[17][i2][i3]=(np.array(state_th['sample'][i2][i3])-np.array(state_th0['sample'][i2][i3]))/(model_parameters[i1]-model_parameters0[i1]+1e-9)*model_parameters0[i1] 
                     else:
-                        Si[i1][i2][i3]=(np.array(XX_th['sample'][i2][i3])-np.array(XX_th0['sample'][i2][i3]))/(TH_param[i1]-TH_param0[i1]+1e-9)*TH_param0[i1]                      
+                        Si[i1][i2][i3]=(np.array(state_th['sample'][i2][i3])-np.array(state_th0['sample'][i2][i3]))/(model_parameters[i1]-model_parameters0[i1]+1e-9)*model_parameters0[i1]                      
                 elif i2==2:        
                     if i1==18:
-                        Si[16][i2][i3]=(np.array(XX_th['sample'][i2][i3])-np.array(XX_th0['sample'][i2][i3]))/(TH_param[i1]-TH_param0[i1]+1e-9)*TH_param0[i1]
+                        Si[16][i2][i3]=(np.array(state_th['sample'][i2][i3])-np.array(state_th0['sample'][i2][i3]))/(model_parameters[i1]-model_parameters0[i1]+1e-9)*model_parameters0[i1]
                     elif i1==21:
-                        Si[17][i2][i3]=(np.array(XX_th['sample'][i2][i3])-np.array(XX_th0['sample'][i2][i3]))/(TH_param[i1]-TH_param0[i1]+1e-9)*TH_param0[i1] 
+                        Si[17][i2][i3]=(np.array(state_th['sample'][i2][i3])-np.array(state_th0['sample'][i2][i3]))/(model_parameters[i1]-model_parameters0[i1]+1e-9)*model_parameters0[i1] 
                         
                     else:
-                        Si[i1][i2][i3]=(np.array(XX_th['sample'][i2][i3])-np.array(XX_th0['sample'][i2][i3]))/(TH_param[i1]-TH_param0[i1]+1e-9)*TH_param0[i1]
+                        Si[i1][i2][i3]=(np.array(state_th['sample'][i2][i3])-np.array(state_th0['sample'][i2][i3]))/(model_parameters[i1]-model_parameters0[i1]+1e-9)*model_parameters0[i1]
                 else:
                     if i1==19:
-                        Si[17][i2][i3]=(np.array(XX_th['sample'][i2][i3])-np.array(XX_th0['sample'][i2][i3]))/(TH_param[i1]-TH_param0[i1]+1e-9)*TH_param0[i1]
+                        Si[17][i2][i3]=(np.array(state_th['sample'][i2][i3])-np.array(state_th0['sample'][i2][i3]))/(model_parameters[i1]-model_parameters0[i1]+1e-9)*model_parameters0[i1]
                     else:
-                        Si[i1][i2][i3]=(np.array(XX_th['sample'][i2][i3])-np.array(XX_th0['sample'][i2][i3]))/(TH_param[i1]-TH_param0[i1]+1e-9)*TH_param0[i1]
+                        Si[i1][i2][i3]=(np.array(state_th['sample'][i2][i3])-np.array(state_th0['sample'][i2][i3]))/(model_parameters[i1]-model_parameters0[i1]+1e-9)*model_parameters0[i1]
 
 
 
         
     Q={}       
-    for i1 in range(uu[0][0]): 
-        for i2 in range(len(TH_param)-4):
+    for i1 in range(control_inputs[0][0]): 
+        for i2 in range(len(model_parameters)-4):
                 for i3 in range(5):
                     q1=Si[i2][i1][i3]
                     q2=q1[:,None]
@@ -151,54 +151,54 @@ def calculate_FIM(tt,XX0,uu,TH_param0,DD,Cov_y=[],Cov_TH0=[]):
 
     
     
-    return Si,Q,FIM,XX_th0,traceFIM,FIM_crit,ei
+    return Si,Q,FIM,state_th0,traceFIM,FIM_crit,ei
 
 # %%
 
-def simulate_parallel(ts,XX0,uu,TH_param,DD):  
-    XX=deepcopy(XX0)
-    brxtor_list=np.arange(uu[0][0]).tolist()
+def simulate_parallel(ts,initial_states,control_inputs,model_parameters,feed_profiles):  
+    state=deepcopy(initial_states)
+    brxtor_list=np.arange(control_inputs[0][0]).tolist()
     
     ty={}
         
     for i1 in brxtor_list: 
-        ty[i1]=simulate_interval(i1, ts,XX,uu,TH_param,DD)
+        ty[i1]=simulate_interval(i1, ts,state,control_inputs,model_parameters,feed_profiles)
         
     for i1 in brxtor_list:
-        XX['state'][i1]=ty[i1][-1,1:]
+        state['state'][i1]=ty[i1][-1,1:]
         
         
         for i2 in [0,1,2,4,5]:
-            ts_sample_all=DD[i1]['time_sample'] 
+            ts_sample_all=feed_profiles[i1]['time_sample'] 
             ts_sample=ts_sample_all[(ts_sample_all>ts[0]) & (ts_sample_all<=ts[1])]
             
             sample_interp=np.interp(ts_sample,ty[i1][:,0],ty[i1][:,i2+1])
 
             try:
-                XX['sample'][i1][i2]=XX['sample'][i1][i2]+sample_interp.tolist() 
+                state['sample'][i1][i2]=state['sample'][i1][i2]+sample_interp.tolist() 
                 
             except:
-                XX['sample'][i1][i2]=sample_interp.tolist()
+                state['sample'][i1][i2]=sample_interp.tolist()
                 
                 
-        ts_sensor_all=DD[i1]['time_sensor'] 
+        ts_sensor_all=feed_profiles[i1]['time_sensor'] 
         ts_sensor=ts_sensor_all[(ts_sensor_all>ts[0]) & (ts_sensor_all<=ts[1])]
         sensor_interp=np.interp(ts_sensor,ty[i1][:,0],ty[i1][:,4])
 
         try:
-            XX['sample'][i1][3]=XX['sample'][i1][3]+sensor_interp.tolist() 
+            state['sample'][i1][3]=state['sample'][i1][3]+sensor_interp.tolist() 
 
         except:
-            XX['sample'][i1][3]=sensor_interp.tolist()
-    return XX
+            state['sample'][i1][3]=sensor_interp.tolist()
+    return state
 # %%
-def simulate_interval(index_mbr,ts,XX,uu,TH_param,DD):
+def simulate_interval(index_mbr,ts,state,control_inputs,model_parameters,feed_profiles):
 
             
-            u=[uu[index_mbr][1]]+[index_mbr]+[uu[index_mbr][0]]+[uu[index_mbr][2]]+[1]
-            X = np.array(XX['state'][index_mbr])
-            D = DD[index_mbr]
-            t, y = function_simulation(ts, X, u, TH_param, D)
+            u=[control_inputs[index_mbr][1]]+[index_mbr]+[control_inputs[index_mbr][0]]+[control_inputs[index_mbr][2]]+[1]
+            X = np.array(state['state'][index_mbr])
+            D = feed_profiles[index_mbr]
+            t, y = function_simulation(ts, X, u, model_parameters, D)
 
             return np.hstack((t[:,None],y))
 
@@ -219,20 +219,20 @@ def function_simulation(ts0,Xo0,u0,THs,D0={}):
     Feed_pulse_all=np.array(D0['Feed_pulse'])
     
     t_u=time_pulse_all[(time_pulse_all>=ts_start) & (time_pulse_all<=ts_end)]
-    uu_base_design=Feed_pulse_all[(time_pulse_all>=ts_start) & (time_pulse_all<=ts_end)]
+    control_inputs_base_design=Feed_pulse_all[(time_pulse_all>=ts_start) & (time_pulse_all<=ts_end)]
  
-    uu=uu_base_design
+    control_inputs=control_inputs_base_design
 
     if len(t_u)==0:
         t_u=np.array([ts_start,ts_end])
-        uu=np.array([0,0])
+        control_inputs=np.array([0,0])
     else:
         if ts_start<t_u[0]:
             t_u=np.append(ts_start,t_u)
-            uu=np.append(0,uu)
+            control_inputs=np.append(0,control_inputs)
         if ts_end>t_u[-1]:
             t_u=np.append(t_u,ts_end)
-            uu=np.append(uu,0)
+            control_inputs=np.append(control_inputs,0)
 
     Xo1=Xo0.copy()
     
@@ -242,9 +242,9 @@ def function_simulation(ts0,Xo0,u0,THs,D0={}):
     
     ni=0
     
-    for i in uu[:-1]:
+    for i in control_inputs[:-1]:
         ts1=np.linspace(t_u[ni],t_u[ni+1],25+1)
-        Xo1[1]=Xo1[1]+uu[ni]*1e-6*u0[0]/0.01
+        Xo1[1]=Xo1[1]+control_inputs[ni]*1e-6*u0[0]/0.01
         t,y=intM(ts1,Xo1,u0,TH1)
         Xo1=y[:,-1].copy()
 
@@ -268,11 +268,11 @@ def odeFB(t,Xo,THo,u):
     dXv=f_ode[0]
     dS=f_ode[1]
     dA=f_ode[2]
-    dDOT=f_ode[3]
+    feed_profilesOT=f_ode[3]
     dP=f_ode[4]
     dmu=f_ode[5]
     
-    dX=np.array([dXv,dS,dA,dDOT,dP,dmu])
+    dX=np.array([dXv,dS,dA,feed_profilesOT,dP,dmu])
     return dX
 # %%  
 def rates(t,X,TH,u):

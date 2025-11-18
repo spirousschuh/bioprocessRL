@@ -385,12 +385,12 @@ def function_simulation(time_span, initial_state, control_input, model_parameter
     end_time = time_span[-1]
 
     # Extract the feed pulse times and rates from the dynamic conditions
-    all_time_pulses = np.array(dynamic_conditions['time_pulse'])
+    all_pulses_time = np.array(dynamic_conditions['time_pulse'])
     all_feed_pulses = np.array(dynamic_conditions['Feed_pulse'])
 
     # Filter the feed pulses that occur within the current simulation interval
-    time_feed_in_interval = all_time_pulses[(all_time_pulses >= start_time) & (all_time_pulses <= end_time)]
-    feed_rate_in_interval = all_feed_pulses[(all_time_pulses >= start_time) & (all_time_pulses <= end_time)]
+    time_feed_in_interval = all_pulses_time[(all_pulses_time >= start_time) & (all_pulses_time <= end_time)]
+    feed_rate_in_interval = all_feed_pulses[(all_pulses_time >= start_time) & (all_pulses_time <= end_time)]
 
     # If there are no feed pulses in the interval, simulate with zero feed
     if len(time_feed_in_interval) == 0:

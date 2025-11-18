@@ -14,7 +14,7 @@ def test_optimizer_reference_run():
     time_span = np.array([0, 2])
     feed_pulse_times = np.arange(feed_start_time, final_time, 10 / 60)
 
-    sample_schedule_offset = 0.99
+    sample_offsets_offset = 0.99
     initial_growth_rate_guess = 0.14
 
     feed_profile = (32.406) * initial_growth_rate_guess * np.exp(initial_growth_rate_guess * (feed_pulse_times - feed_pulse_times[0]))
@@ -25,7 +25,7 @@ def test_optimizer_reference_run():
         0: {
             'time_pulse': feed_pulse_times.tolist(),
             'Feed_pulse': feed_profile.tolist(),
-            'time_sample': np.arange(0, final_time, 1) + sample_schedule_offset,
+            'time_sample': np.arange(0, final_time, 1) + sample_offsets_offset,
             'time_sensor': np.linspace(0.04, final_time, 25 * round(final_time)),
         }
     }

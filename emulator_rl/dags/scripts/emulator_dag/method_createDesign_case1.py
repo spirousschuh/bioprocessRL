@@ -12,7 +12,7 @@ glucose_IC=[4,4,4,4,4,4,4,4]*3 #Initial states for the species listed above
 
 
 
-time_pulses=np.arange(5+5/60,t_duration,10/60) #Time in hours
+pulses_time=np.arange(5+5/60,t_duration,10/60) #Time in hours
 time_samples_columns={'col1':np.arange(.99,t_duration,1).tolist()+[t_duration],'col2':np.arange(.99,t_duration,1).tolist()+[t_duration],'col3':np.arange(.99,t_duration,1).tolist()+[t_duration]} #Time in hours
 sampling_rate_DOT=2/60 #Time in hours
 
@@ -65,7 +65,7 @@ for i1 in Exp_list:
     EMULATOR_config[i1]['Induction_time']=float(Induction_time[n2])
     EMULATOR_config[i1]['Inductor_conc']=float(Inductor_conc[n2])
     
-    EMULATOR_config[i1]['Pulse_profile']={'time_pulse':time_pulses.tolist(),'Feed_pulse':(5+np.zeros(len(time_pulses.tolist()))).tolist()}
+    EMULATOR_config[i1]['Pulse_profile']={'time_pulse':pulses_time.tolist(),'Feed_pulse':(5+np.zeros(len(pulses_time.tolist()))).tolist()}
     EMULATOR_config[i1]['time_sample']={}
     for i2 in EMULATOR_config['Species_list']:
         if n2<8:

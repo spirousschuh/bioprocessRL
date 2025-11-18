@@ -24,7 +24,7 @@ if __name__=="__main__":
         print("iter: ", i)
         env = gym.make('kiwiGym-CS2') 
         obs,_=env.reset()    
-        TH_env=env.unwrapped.kiwiGym.TH_param
+        TH_env=env.unwrapped.kiwiGym.model_parameters
 
         while(True):
             action, _ = model.predict(obs,deterministic=True)  
@@ -36,7 +36,7 @@ if __name__=="__main__":
                 break
         #######
         obs,_=env.reset() 
-        env.unwrapped.kiwiGym.TH_param=TH_env
+        env.unwrapped.kiwiGym.model_parameters=TH_env
         while(True):
             action_0, _ = model_0.predict(obs,deterministic=True)  
             obs, reward, terminated, _, _ = env.step(action_0)
@@ -47,7 +47,7 @@ if __name__=="__main__":
                 break      
         #######
         obs,_=env.reset() 
-        env.unwrapped.kiwiGym.TH_param=TH_env
+        env.unwrapped.kiwiGym.model_parameters=TH_env
         while(True):
             obs, reward, terminated, _, _ = env.step([10,10,10])
             if(terminated):

@@ -27,7 +27,7 @@ with DAG(
 
     # get configuration
     config = {
-        "time_final": 14,  
+        "final_time": 14,  
         "time_start_checking_db": 5,
         "time_bw_check_db": 1,
         "runID": 623,
@@ -85,7 +85,7 @@ with DAG(
     last_node = start
 
     # calculates iterations
-    iterations = int((config["time_final"] - config["time_start_checking_db"]) / config["time_bw_check_db"])
+    iterations = int((config["final_time"] - config["time_start_checking_db"]) / config["time_bw_check_db"])
 
     # iterates 
     for it in range(1, iterations + 1):
