@@ -41,7 +41,12 @@ class kiwiGymEnv_CS1(gym.Env):
     metadata = {"render_modes": ["human"], 'render_fps': 4}
 
 
-    def __init__(self, render_mode=None):
+    def __init__(
+            self,
+            initial_model_parameters=None,
+            num_experiments=1,
+            render_mode=None,
+    ):
         """Create the Gym wrapper and build observation/action spaces.
 
         Args:
@@ -50,7 +55,10 @@ class kiwiGymEnv_CS1(gym.Env):
         self.render_mode = render_mode
 
         # Create the underlying simulation object (annotated for type checkers)
-        self.kiwiGym: kiwiGym = kiwiGym()
+        self.kiwiGym: kiwiGym = kiwiGym(
+            initial_model_parameters=initial_model_parameters,
+            num_experiments=num_experiments,
+        )
 
         # Allowed discrete action values (feed adjustment set); actions map
         # to indices into this array.
