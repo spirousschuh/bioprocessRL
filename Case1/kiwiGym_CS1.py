@@ -5,6 +5,31 @@ from copy import deepcopy
 from Case1 import method_kiwiGym
 
 import matplotlib.pyplot as plt
+
+
+num_experiments = 1
+DEFAULT_ODE_PARAMETERS = [
+        # --- Kinetic Parameters ---
+        1.2578,      # thetas[0]: qs_max - Max substrate uptake rate
+        0.43041,     # thetas[1]: fracc_q_ox_max - Fraction of max oxidative quotient
+        0.6439,      # thetas[2]: qa_max - Max by-product production rate
+        7.0767,      # thetas[3]: Ksi - Substrate inhibition constant
+        0.4063,      # thetas[4]: Ys_ox - Yield of substrate to oxygen
+        0.1143 * 4,  # thetas[5]: Ya_p - Yield of by-product to product
+        0.1848 * 4,  # thetas[6]: Ya_c - Yield of by-product to cells
+        0.4242,      # thetas[7]: Kai - By-product inhibition constant
+        1.586 * 0.7,   # thetas[8]: Yo_ox - Yield of oxygen (oxidative)
+        1.5874 * 0.7,  # thetas[9]: Yo_a - Yield of oxygen to by-product
+        0.3322 * 0.75, # thetas[10]: Yxs_of - Yield of cells to substrate (overflow)
+        0.0371,      # thetas[11]: Ks - Substrate saturation constant
+        0.0818,      # thetas[12]: Ka - By-product saturation constant
+        9000,        # thetas[13]: ky_1 - Yield-related parameter 1
+        0.1,         # thetas[14]: ky_2 - Yield-related parameter 2
+        5,           # thetas[15]: ky_3 - Yield-related parameter 3
+    ] + (
+    [850] * num_experiments   # thetas[16...]: kla - kLa value (per experiment)
+    + [90] * num_experiments  # thetas[...]: k_sensor - Sensor constant (per experiment)
+)
 # %%
 
 
@@ -31,27 +56,7 @@ class kiwiGym:
 
         # Define model parameters (bioprocess / kinetics / sensor params)
         # model_parameters is a 1D array that holds kinetic and sensor parameters
-        self.model_parameters = np.array(initial_model_parameters) if initial_model_parameters is not None else np.array([
-            # --- Kinetic Parameters ---
-            1.2578,      # thetas[0]: qs_max - Max substrate uptake rate
-            0.43041,     # thetas[1]: fracc_q_ox_max - Fraction of max oxidative quotient
-            0.6439,      # thetas[2]: qa_max - Max by-product production rate
-            7.0767,      # thetas[3]: Ksi - Substrate inhibition constant
-            0.4063,      # thetas[4]: Ys_ox - Yield of substrate to oxygen
-            0.1143 * 4,  # thetas[5]: Ya_p - Yield of by-product to product
-            0.1848 * 4,  # thetas[6]: Ya_c - Yield of by-product to cells
-            0.4242,      # thetas[7]: Kai - By-product inhibition constant
-            1.586 * 0.7,   # thetas[8]: Yo_ox - Yield of oxygen (oxidative)
-            1.5874 * 0.7,  # thetas[9]: Yo_a - Yield of oxygen to by-product
-            0.3322 * 0.75, # thetas[10]: Yxs_of - Yield of cells to substrate (overflow)
-            0.0371,      # thetas[11]: Ks - Substrate saturation constant
-            0.0818,      # thetas[12]: Ka - By-product saturation constant
-            9000,        # thetas[13]: ky_1 - Yield-related parameter 1
-            0.1,         # thetas[14]: ky_2 - Yield-related parameter 2
-            5,           # thetas[15]: ky_3 - Yield-related parameter 3
-        ] + [850] * num_experiments   # thetas[16...]: kla - kLa value (per experiment)
-          + [90] * num_experiments)    # thetas[...]: k_sensor - Sensor constant (per experiment)
-
+        self.model_parameters = np.array(initial_model_parameters) if initial_model_parameters is not None else np.array(DEFAULT_ODE_PARAMETERS)
         # Experiment / simulation configuration
         self.num_experiments = num_experiments
         self.final_time = final_time

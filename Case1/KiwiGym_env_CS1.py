@@ -19,6 +19,8 @@ from gymnasium.utils.env_checker import check_env
 import numpy as np
 
 from Case1.kiwiGym_CS1 import kiwiGym
+from Case1.kiwiGym_CS1 import DEFAULT_ODE_PARAMETERS
+
 # %%
 register(
     id='kiwiGym-CS1',                                
@@ -45,7 +47,10 @@ class kiwiGymEnv_CS1(gym.Env):
             self,
             initial_model_parameters=None,
             num_experiments=1,
+            random_initial_state_variance=0.,
+            random_ode_param_variance=0.33,
             render_mode=None,
+            sample_offsets=None,
     ):
         """Create the Gym wrapper and build observation/action spaces.
 
@@ -58,7 +63,11 @@ class kiwiGymEnv_CS1(gym.Env):
         self.kiwiGym: kiwiGym = kiwiGym(
             initial_model_parameters=initial_model_parameters,
             num_experiments=num_experiments,
+            sample_offsets=sample_offsets,
         )
+
+        self.random_ode_param_variance = random_ode_param_variance
+        self.random_initial_state_variance = random_initial_state_variance
 
         # Allowed discrete action values (feed adjustment set); actions map
         # to indices into this array.
@@ -109,19 +118,15 @@ class kiwiGymEnv_CS1(gym.Env):
 
         # Base model parameters and randomized perturbation used to initialize
         # the simulation (keeps prior behaviour of the project).
-        base_model_parameters = np.array(
-            [
-                1.2578, 0.43041, 0.6439, 7.0767, 0.4063, 0.1143 * 4, 0.1848 * 4,
-                .4242, 1.586 * .7, 1.5874 * .7, 0.3322 * .75, 0.0371, 0.0818,
-                9000, .1, 5,
-            ]
-            + [850] * 1
-            + [90] * 1
-        )
-        # this randomization is shit
-        randomized_model_parameters = base_model_parameters * (
-            1 + 0.66 * (np.random.random(len(base_model_parameters)) - .5) / 2
-        )
+        base_model_parameters = np.array(DEFAULT_ODE_PARAMETERS)
+        if self.random_ode_param_variance > 0.0:
+            randomized_model_parameters = base_model_parameters * np.random.gamma(
+                1. / self.random_ode_param_variance,
+                self.random_ode_param_variance,
+                len(base_model_parameters),
+            )
+        else:
+            randomized_model_parameters = base_model_parameters
 
         # Reset the underlying simulation. (Keep kwarg name `model_parameters`
         # to preserve existing call sites in the repository.)
