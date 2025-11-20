@@ -20,6 +20,7 @@ import numpy as np
 
 from Case1.kiwiGym_CS1 import kiwiGym
 from Case1.kiwiGym_CS1 import DEFAULT_ODE_PARAMETERS
+from kiwiGym_CS1 import DEFAULT_INITIAL_STATES
 
 # %%
 register(
@@ -128,9 +129,31 @@ class kiwiGymEnv_CS1(gym.Env):
         else:
             randomized_model_parameters = base_model_parameters
 
+        if self.random_initial_state_variance > 0.0:
+            randomized_initial_states = DEFAULT_INITIAL_STATES * np.concatenate(
+                [
+                    np.random.gamma(
+                        1. / self.random_initial_state_variance,
+                        self.random_initial_state_variance,
+                        # just perturb the first two states (X and S)
+                        2,
+                    ),
+                    [1.0, 1.0, 1.0, 1.0],
+                ],
+                axis=0
+            )
+        else:
+            randomized_initial_states = DEFAULT_INITIAL_STATES
+
+
+
         # Reset the underlying simulation. (Keep kwarg name `model_parameters`
         # to preserve existing call sites in the repository.)
-        self.kiwiGym.reset(seed=seed, model_parameters=randomized_model_parameters)
+        self.kiwiGym.reset(
+            seed=seed,
+            model_parameters=randomized_model_parameters,
+            initial_states=randomized_initial_states,
+        )
 
         # Initialize the flattened observation array (we will fill parts of it)
         observation_array = np.zeros(len(self.observation_upper_bound), dtype=float)

@@ -35,8 +35,8 @@ def setup_environment(env_id, args, is_eval=False):
 
     # Pass custom arguments to the environment constructor
     env_kwargs = {
-        'random_ode_param_variance': args.random_ode_param_variance if not is_eval else 1e-6,
-
+        'random_ode_param_variance': args.random_ode_param_variance if not is_eval else 0.,
+        'random_initial_state_variance': args.random_initial_state_variance if not is_eval else 0.,
     }
 
     return make_vec_env(
@@ -125,6 +125,7 @@ def main():
     parser.add_argument("--n_parallel", type=int, default=10, help="Number of parallel environments.")
     parser.add_argument("--learning_rate", type=float, default=0.001, help="Learning rate.")
     parser.add_argument("--random_ode_param_variance", type=float, default=0., help="Using random_ode_param_variance for sampling random ODE parameters.")
+    parser.add_argument("--random_initial_state_variance", type=float, default=0., help="Variance for perturbing the initial states.")
     parser.add_argument("--ent_coef", type=float, default=0.001, help="Entropy coefficient.")
     parser.add_argument("--n_steps", type=int, default=10,
                         help="Number of steps to run for each environment per update.")

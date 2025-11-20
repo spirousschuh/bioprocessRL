@@ -30,6 +30,10 @@ DEFAULT_ODE_PARAMETERS = [
     [850] * num_experiments   # thetas[16...]: kla - kLa value (per experiment)
     + [90] * num_experiments  # thetas[...]: k_sensor - Sensor constant (per experiment)
 )
+
+
+DEFAULT_INITIAL_STATES = [0.18, 4, 0, 100, 0, .01]  # Biomass, Substrate, By-product, DOT, Product, Volume
+
 # %%
 
 
@@ -46,6 +50,8 @@ class kiwiGym:
             mu_reference=None,
             initial_model_parameters=None,
             sampling_times_per_hour=25,
+            minimal_observation=True,
+            observation_horizon=1.,
     ):
 
         # Use safe defaults for list-like arguments
@@ -69,6 +75,8 @@ class kiwiGym:
         # relative sample time offsets for each experiment
         self.sample_offsets = sample_offsets
         self.mu_reference = np.array(mu_reference)
+        self.minimal_observation = minimal_observation
+        self.observation_horizon = observation_horizon
 
         # --- Per-experiment data structures ---
         # initial_state_template: holds the template for states and samples
@@ -123,11 +131,14 @@ class kiwiGym:
         self.observation = np.zeros([self.control_inputs[0][0] * (4 + 25 * 0 + 1)])
         return
 # %%    
-    def reset(self, seed=None, model_parameters=[]):
+    def reset(self, seed=None, model_parameters=[], initial_states=None):
         """Reset the environment to initial conditions. Optionally override model parameters."""
         # Optionally update model parameters
         if len(model_parameters) > 0:
             self.model_parameters = model_parameters
+
+        if initial_states is None:
+            initial_states = DEFAULT_INITIAL_STATES
 
         # Reset time
         self.current_time = 0
@@ -137,7 +148,7 @@ class kiwiGym:
         initial_state_template = {'state': {}, 'sample': {}}
         for exp_idx in range(self.num_experiments):
             initial_state_template['t'] = self.time_interval[0]
-            initial_state_template['state'][exp_idx] = [0.18, 4, 0, 100, 0, .01]
+            initial_state_template['state'][exp_idx] = initial_states
             initial_state_template['sample'][exp_idx] = {0: [], 1: [], 2: [], 3: [], 4: []}
         self.state = deepcopy(initial_state_template)
         self.feed_profiles_history = deepcopy(self.feed_profiles)
@@ -211,30 +222,55 @@ class kiwiGym:
         stacked_measurements = []
         for exp_idx in range(self.control_inputs[0].num_experiments):
             # We only include channels 0 (Biomass) and 3 (DOT) in the observation
-            for measurement_channel in [0, 3]:
-                if measurement_channel == 0:
-                    time_points = np.array(self.feed_profiles_history[exp_idx]['time_sample'])
-                else:
-                    time_points = np.array(self.feed_profiles_history[exp_idx]['time_sensor'])
+            if self.minimal_observation:
+                for measurement_channel in [0, 3]:
+                    if measurement_channel == 0:
+                        time_points = np.array(self.feed_profiles_history[exp_idx]['time_sample'])
+                    else:
+                        time_points = np.array(self.feed_profiles_history[exp_idx]['time_sensor'])
 
-                values = np.array(self.state['sample'][exp_idx][measurement_channel])
-                # restrict to values within the current interval
-                time_points_in_window = time_points[time_points <= self.time_interval[1]]
-                values_in_window = values[
-                    (time_points_in_window > self.time_interval[0])
-                    & (time_points_in_window <= self.time_interval[1])
-                ]
 
-                # For DOT we store a single aggregated value (minimum over the interval)
-                if measurement_channel == 3:
-                    values_in_window = np.array([np.min(values_in_window)])
 
-                values_column = values_in_window[:, None]
+                    values = np.array(self.state['sample'][exp_idx][measurement_channel])
+                    # print(values)
+                    # restrict to values within the current interval
+                    time_points_in_window = time_points[time_points <= self.time_interval[1]]
+                    values_in_window = values[
+                        (time_points_in_window > self.time_interval[0])
+                        & (time_points_in_window <= self.time_interval[1])
+                    ]
 
-                if len(stacked_measurements) == 0:
-                    stacked_measurements = values_column
-                else:
-                    stacked_measurements = np.vstack((stacked_measurements, values_column))
+                    # For DOT we store a single aggregated value (minimum over the interval)
+                    if measurement_channel == 3:
+                        values_in_window = np.array([np.min(values_in_window)])
+
+                    values_column = values_in_window[:, None]
+
+                    if len(stacked_measurements) == 0:
+                        stacked_measurements = values_column
+                    else:
+                        stacked_measurements = np.vstack((stacked_measurements, values_column))
+
+            else:
+                # gather measurements from the last observation_horizon
+                # time_points = np.array(self.feed_profiles_history[exp_idx]['time_sample'])
+                # biomass_ = np.array(self.state['sample'][exp_idx][0])  # Biomass
+                # biomass_measurements = biomass_[
+                #     np.logical_and(
+                #         time_points > (self.current_time - self.observation_horizon),
+                #         time_points <= self.current_time,
+                #     )
+                # ]
+                # time_points = np.array(self.feed_profiles_history[exp_idx]['time_sensor'])
+                # dot_ = np.array(self.state['sample'][exp_idx][3])  # DOT
+                # dot_measurements = dot_[
+                #     np.logical_and(
+                #         time_points > (self.current_time - self.observation_horizon),
+                #         time_points <= self.current_time,
+                #     )
+                # ]
+                # stacked_measurements = np.concatenate([biomass_measurements, dot_measurements])
+                raise NotImplementedError("Full observation mode not implemented yet.")
 
         state_obs = stacked_measurements
         self.observation = state_obs.flatten()
@@ -270,4 +306,4 @@ class kiwiGym:
         else:
             self.terminated = False
             self.reward = 0
-        return self.observation, self.reward, self.terminated#,
+        return self.observation, self.reward, self.terminated
