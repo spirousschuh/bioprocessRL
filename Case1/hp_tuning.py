@@ -79,21 +79,17 @@ def sample_ppo_hyperparameters(trial: optuna.Trial, env_args: Dict[str, Any]) ->
 
     # We suggest hyperparameters based on common RL search ranges
     learning_rate = trial.suggest_float('learning_rate', 1e-5, 1e-3, log=True)
-    n_steps = trial.suggest_categorical('n_steps', [50, 100, 200, 400, 800, 1600])
-    batch_size = trial.suggest_categorical('batch_size', [50, 100, 200, 400, 800])
+    n_steps = trial.suggest_int('n_steps', 10, 200, step=10)
+    batch_size = trial.suggest_int('batch_size', 50, 1000, step=50)
     gamma = trial.suggest_float('gamma', 0.9, 0.9999, log=True)
     ent_coef = trial.suggest_float('ent_coef', 1e-6, 5e-2, log=True)
 
     # Architecture
-    num_neurons = trial.suggest_categorical('num_neurons', [64, 128, 256])
+    num_neurons = trial.suggest_int('num_neurons', 32, 256, step=32)
 
     # Policy kwargs are passed as a dictionary
     policy_kwargs = dict(net_arch=[num_neurons, num_neurons])
 
-    # Check if batch_size is smaller than n_steps
-    if batch_size > n_steps:
-        # Invalid configuration, skip this trial
-        raise optuna.exceptions.TrialPruned()
 
     # The returned dictionary is passed to the PPO constructor
     return {

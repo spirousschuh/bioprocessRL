@@ -50,7 +50,7 @@ class ObservationEcoliEnv(gym.Env):
     single, self-contained environment. It handles the simulation dynamics,
     state management, and interaction with the Gym API.
     """
-    metadata = {"render_modes": ["human"], 'render_fps': 4}
+    metadata = {"render_modes": ["human", "rgb_array"], 'render_fps': 4}
 
     def __init__(
             self,
