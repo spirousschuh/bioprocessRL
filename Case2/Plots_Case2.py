@@ -141,11 +141,11 @@ def aux_get_species_from_env(env):
         result[mbr] = {}
         for species in range(5):
             if species !=3:
-                tt=env.unwrapped.kiwiGym.DD_historic[mbr]['time_sample']
+                tt=env.unwrapped.kiwiGym.feed_profiles_history[mbr]['time_sample']
             else:
-                tt=env.unwrapped.kiwiGym.DD_historic[mbr]['time_sensor']
+                tt=env.unwrapped.kiwiGym.feed_profiles_history[mbr]['time_sensor']
             
-            result[mbr][species] = {"tt": tt, "X": env.unwrapped.kiwiGym.XX['sample'][mbr][species]}
+            result[mbr][species] = {"tt": tt, "X": env.unwrapped.kiwiGym.state['sample'][mbr][species]}
         
     return result
 
@@ -163,7 +163,7 @@ def plot_model_comparative():
 
     for a in range(experiments):
         obs,_ = env.reset() 
-        TH_env=env.unwrapped.kiwiGym.TH_param
+        TH_env=env.unwrapped.kiwiGym.model_parameters
 
         for model_name in models:
 
@@ -171,7 +171,7 @@ def plot_model_comparative():
                 model=PPO.load(os.path.join(load_dir,model_name),device="cpu")
 
             obs,_ = env.reset()         
-            env.unwrapped.kiwiGym.TH_param=TH_env
+            env.unwrapped.kiwiGym.model_parameters=TH_env
 
             while(True):
                 if model_name == "no_agent":

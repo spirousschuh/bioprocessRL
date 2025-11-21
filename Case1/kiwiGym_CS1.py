@@ -2,196 +2,308 @@
 import numpy as np
 from copy import deepcopy
 
-import method_kiwiGym
+from Case1 import method_kiwiGym
 
 import matplotlib.pyplot as plt
+
+
+num_experiments = 1
+DEFAULT_ODE_PARAMETERS = [
+        # --- Kinetic Parameters ---
+        1.2578,      # thetas[0]: qs_max - Max substrate uptake rate
+        0.43041,     # thetas[1]: fracc_q_ox_max - Fraction of max oxidative quotient
+        0.6439,      # thetas[2]: qa_max - Max by-product production rate
+        7.0767,      # thetas[3]: Ksi - Substrate inhibition constant
+        0.4063,      # thetas[4]: Ys_ox - Yield of substrate to oxygen
+        0.1143 * 4,  # thetas[5]: Ya_p - Yield of by-product to product
+        0.1848 * 4,  # thetas[6]: Ya_c - Yield of by-product to cells
+        0.4242,      # thetas[7]: Kai - By-product inhibition constant
+        1.586 * 0.7,   # thetas[8]: Yo_ox - Yield of oxygen (oxidative)
+        1.5874 * 0.7,  # thetas[9]: Yo_a - Yield of oxygen to by-product
+        0.3322 * 0.75, # thetas[10]: Yxs_of - Yield of cells to substrate (overflow)
+        0.0371,      # thetas[11]: Ks - Substrate saturation constant
+        0.0818,      # thetas[12]: Ka - By-product saturation constant
+        9000,        # thetas[13]: ky_1 - Yield-related parameter 1
+        0.1,         # thetas[14]: ky_2 - Yield-related parameter 2
+        5,           # thetas[15]: ky_3 - Yield-related parameter 3
+    ] + (
+    [850] * num_experiments   # thetas[16...]: kla - kLa value (per experiment)
+    + [90] * num_experiments  # thetas[...]: k_sensor - Sensor constant (per experiment)
+)
+
+
+DEFAULT_INITIAL_STATES = [0.18, 4, 0, 100, 0, .01]  # Biomass, Substrate, By-product, DOT, Product, Volume
+
 # %%
 
-    
+
 class kiwiGym:
-    def __init__(self,render_mode=None,TH_param0=[]):
+    def __init__(
+            self,
+            render_mode=None,
+            current_time=0,
+            num_experiments=1,
+            final_time=14,
+            time_step=1,
+            sample_offsets=None,
+            time_batch=5,
+            mu_reference=None,
+            initial_model_parameters=None,
+            sampling_times_per_hour=25,
+            minimal_observation=True,
+            observation_horizon=1.,
+    ):
 
-        time_current=0
-        number_mbr=1
-        time_final=14
-        time_step=1
-        sample_schedule=[0.99,0.99,0.99]
-        time_batch=5
-        mu_reference=[0.145]
+        # Use safe defaults for list-like arguments
+        if sample_offsets is None:
+            sample_offsets = [0.99] * max(1, num_experiments)
+        if mu_reference is None:
+            mu_reference = [0.145] * max(1, num_experiments)
 
-        
-        #Define Model Parameters
-        if len(TH_param0)==0:
-            self.TH_param=np.array([1.2578, 0.43041, 0.6439,  7.0767,  0.4063,  0.1143*4,  0.1848*4,    .4242,    1.586*.7, 1.5874*.7,  0.3322*.75,  0.0371,  0.0818,    9000, .1, 5]+[850]*number_mbr+[90]*number_mbr)
-        else:
-            self.TH_param=np.array(TH_param0)   
-        
-        self.number_mbr=number_mbr
-        self.time_final=time_final
-        self.time_current=time_current
-        self.time_step=time_step
-        self.time_interval=np.array([time_current,time_current+self.time_step])
-        self.time_pulses=np.arange(time_batch+5/60,time_final,10/60)
-        self.sample_schedule=sample_schedule
-        self.mu_reference=np.array(mu_reference)    
-        
-        # MBR specific variables
-        XX0={'state':{},'sample':{}} #States and samples
-        uu={} #Fixed process variables
-        DD={} #Profile process variables
-    
-        for i in range(self.number_mbr):
-            XX0['t']=self.time_interval[0]
-            XX0['state'][i]=[0.18,4,0,100,0,.01]
-            XX0['sample'][i]={0:[],1:[],2:[],3:[],4:[],}
-            uu[i]=[self.number_mbr,200,10]
-            
-            feed_profile_i=(32.406)*self.mu_reference[i]*np.exp(self.mu_reference[i]*(self.time_pulses-self.time_pulses[0]))
-            feed_profile_i=np.round(feed_profile_i*2)/2
-            feed_profile_i[feed_profile_i<5]=5
-            
-            DD[i]={'time_pulse':self.time_pulses.tolist(),'Feed_pulse':feed_profile_i.tolist(),'time_sample':np.arange(self.time_final)+self.sample_schedule[i],
-                   'time_sensor':np.linspace(0.04,self.time_final,25*round(self.time_final))}
+        # Define model parameters (bioprocess / kinetics / sensor params)
+        # model_parameters is a 1D array that holds kinetic and sensor parameters
+        self.model_parameters = np.array(initial_model_parameters) if initial_model_parameters is not None else np.array(DEFAULT_ODE_PARAMETERS)
+        # Experiment / simulation configuration
+        self.num_experiments = num_experiments
+        self.final_time = final_time
+        self.current_time = current_time
+        self.time_step = time_step
+        # time interval for the next integration step
+        self.time_interval = np.array([current_time, current_time + self.time_step])
+        # times at which feed pulses may occur
+        self.pulse_times = np.arange(time_batch + 5/60, final_time, 10/60)
+        # relative sample time offsets for each experiment
+        self.sample_offsets = sample_offsets
+        self.mu_reference = np.array(mu_reference)
+        self.minimal_observation = minimal_observation
+        self.observation_horizon = observation_horizon
+
+        # --- Per-experiment data structures ---
+        # initial_state_template: holds the template for states and samples
+        initial_state_template = {'state': {}, 'sample': {}}  # States and samples template
+        control_inputs = {}  # Fixed control inputs per experiment
+        feed_profiles = {}  # Feed profile (time/values) per experiment
+
+        # Initialize per-experiment templates and profiles
+        for exp_idx in range(self.num_experiments):
+            initial_state_template['t'] = self.time_interval[0]
+            initial_state_template['state'][exp_idx] = [0.18, 4, 0, 100, 0, .01]
+            initial_state_template['sample'][exp_idx] = {0: [], 1: [], 2: [], 3: [], 4: []}
+
+            # Control inputs object (keeps metadata for each experiment)
+            control_inputs[exp_idx] = method_kiwiGym.ControlInputs(
+                experiment_index=exp_idx,
+                num_experiments=self.num_experiments,
+                feed_concentration=200,
+                induction_time=10.,
+                product_switch=0,
+            )
+
+            # Build a feed profile (pulse values) using mu_reference and exponential growth
+            feed_profile_values = (32.406) * self.mu_reference[exp_idx] * np.exp(
+                self.mu_reference[exp_idx] * (self.pulse_times - self.pulse_times[0])
+            )
+            # Round to nearest 0.5 uL and enforce a minimum
+            feed_profile_values = np.round(feed_profile_values * 2) / 2
+            feed_profile_values[feed_profile_values < 5] = 5
+
+            feed_profile_values[3] = 0.
+            feed_profiles[exp_idx] = {
+                'time_pulse': self.pulse_times.tolist(),
+                'Feed_pulse': feed_profile_values.tolist(),
+                'time_sample': np.arange(self.final_time) + self.sample_offsets[exp_idx],
+                'time_sensor': np.linspace(0.04, self.final_time, sampling_times_per_hour * round(self.final_time)),
+            }
             
 
-        self.XX0=deepcopy(XX0)
-        self.XX=deepcopy(XX0)
-        self.uu=uu
-        self.DD=DD
-        self.DD_historic=deepcopy(self.DD)
-        
-        #KiwiGymEnv variables
-        self.terminated=False
-        self.obs=np.zeros([self.uu[0][0]*(4+25*0+1)])
+        # Save deep copies so we can reset state later
+        self.initial_state_template = deepcopy(initial_state_template)
+        self.state = deepcopy(initial_state_template)
+        self.control_inputs = control_inputs
+        self.feed_profiles = feed_profiles
+        # historic profile is the active feed profile that gets modified by actions
+        self.feed_profiles_history = deepcopy(self.feed_profiles)
+
+        # Environment variables
+        self.terminated = False
+        # observation is a flattened vector of recent measurements; initialize to zeros
+        # Keep the original shape logic (uses indexing from ControlInputs object)
+        self.observation = np.zeros([self.control_inputs[0][0] * (4 + 25 * 0 + 1)])
         return
 # %%    
-    def reset(self, seed=None,TH_param=[]):
-        #Change parameters
-        if len(TH_param)>0:
-            self.TH_param=TH_param
-        
-        #Reset time    
-        self.time_current=0
-        self.time_interval=np.array([self.time_current,self.time_current+self.time_step])
-        
-        #Reset States, profiles and Env variables          
-        XX0={'state':{},'sample':{}}
-        for i in range(self.number_mbr):
-            XX0['t']=self.time_interval[0]
-            XX0['state'][i]=[0.18,4,0,100,0,.01]
-            XX0['sample'][i]={0:[],1:[],2:[],3:[],4:[],}
-        self.XX=deepcopy(XX0)
-        self.DD_historic=deepcopy(self.DD)
-        self.obs=np.zeros([self.uu[0][0]*(4+25*0+1)])#.tolist()
-        self.terminated=False
-        return 
+    def reset(self, seed=None, model_parameters=[], initial_states=None):
+        """Reset the environment to initial conditions. Optionally override model parameters."""
+        # Optionally update model parameters
+        if len(model_parameters) > 0:
+            self.model_parameters = model_parameters
+
+        if initial_states is None:
+            initial_states = DEFAULT_INITIAL_STATES
+
+        # Reset time
+        self.current_time = 0
+        self.time_interval = np.array([self.current_time, self.current_time + self.time_step])
+
+        # Reset states and historic feed profiles
+        initial_state_template = {'state': {}, 'sample': {}}
+        for exp_idx in range(self.num_experiments):
+            initial_state_template['t'] = self.time_interval[0]
+            initial_state_template['state'][exp_idx] = initial_states
+            initial_state_template['sample'][exp_idx] = {0: [], 1: [], 2: [], 3: [], 4: []}
+        self.state = deepcopy(initial_state_template)
+        self.feed_profiles_history = deepcopy(self.feed_profiles)
+        # Reinitialize the flattened observation vector
+        self.observation = np.zeros([self.control_inputs[0].num_experiments * (4 + 25 * 0 + 1)])
+        self.terminated = False
+        return
 # %%    
     def render(self):
-        #Show DOT and Biomass
-        for i2 in range(self.uu[0][0]):
-            plt.plot(self.XX['sample'][i2][3],'.')#
+        """Simple plotting helper: show DOT (index 3) and Biomass (index 0) for each experiment."""
+        for idx in range(self.control_inputs[0].num_experiments):
+            plt.plot(self.state['sample'][idx][3], '.')
         plt.show()
-        for i2 in range(self.uu[0][0]):
-            plt.plot(self.XX['sample'][i2][0],'o')
+        for idx in range(self.control_inputs[0].num_experiments):
+            plt.plot(self.state['sample'][idx][0], 'o')
         plt.show()
-        print('time: ',self.time_current,' done: ',self.terminated,'reward: ',self.reward)
+        print('time: ', self.current_time, ' done: ', self.terminated, 'reward: ', getattr(self, 'reward', None))
 
 # %%    
-    def perform_action(self,action_step=[]):
+    def perform_action(self, action_step=[]):
+        """Apply an action (feed changes) for the current time interval and advance simulation.
 
-        # If there is no action, use the reference profile. Else, modify the current profile.
+        action_step: if left as default (empty list), the reference profile is used; otherwise
+        action_step is applied to pulses that fall into the current time interval.
+        """
+
+        # If action_step is the default list object, use the reference (original) feed_profiles
         if action_step is list:
-            DD_action=deepcopy(self.DD)
+            feed_profiles_to_apply = deepcopy(self.feed_profiles)
         else:
-            DD_action=deepcopy(self.DD_historic)
+            # Otherwise start from historic (possibly already modified) feed profiles
+            feed_profiles_to_apply = deepcopy(self.feed_profiles_history)
 
-            action=action_step
-            time_step_before=1
-            for i in range(self.uu[0][0]):
-                t_pulse=np.array(DD_action[i]['time_pulse'])
-                DD_ref=np.array(DD_action[i]['Feed_pulse'])
-                
-                DD_change=np.zeros(DD_ref.shape)
-                
-                DD_change[(t_pulse<=(self.time_interval[1]+time_step_before)) & (t_pulse>=(self.time_interval[0]+time_step_before))]=action
-                
-                DD_corrected=DD_ref+DD_change
-                DD_corrected[(t_pulse>=t_pulse[0]) & (DD_corrected<5)]=5 #After that, min 5 ul
-                
-                DD_action[i]['Feed_pulse']=(DD_corrected).tolist()
+            action_values = action_step
+            action_delay = 0.5  # time offset used when mapping pulses to actions
+            for exp_idx in range(self.control_inputs[0].num_experiments):
+                t_pulse = np.array(feed_profiles_to_apply[exp_idx]['time_pulse'])
+                feed_ref = np.array(feed_profiles_to_apply[exp_idx]['Feed_pulse'])
 
-                
-        self.DD_historic=deepcopy(DD_action)
+                feed_change = np.zeros(feed_ref.shape)
+                # Apply action to pulses that fall into the current integration window
+                feed_change[(t_pulse <= (self.time_interval[1] + action_delay)) & (t_pulse >= (self.time_interval[0] + action_delay))] = action_values
 
-        #Apply action during time interval
+                feed_corrected = feed_ref + feed_change
+                # Enforce minimum feed of 5 uL after the first pulse time
+                feed_corrected[(t_pulse >= t_pulse[0]) & (feed_corrected < 5)] = 5
 
-        XX_plus1=method_kiwiGym.simulate_parallel(self.time_interval,self.XX,self.uu,self.TH_param,self.DD_historic)
-        self.XX=XX_plus1
-        self.time_current=self.time_interval[1]
-        
-        ################ Construct observation vector
-        if len(self.obs)==0:
-            XX_obs=np.zeros([self.uu[0][0]*(4+1)]) #
+                feed_profiles_to_apply[exp_idx]['Feed_pulse'] = (feed_corrected).tolist()
+
+        # Save the applied profile as historic
+        self.feed_profiles_history = deepcopy(feed_profiles_to_apply)
+
+        # Run the simulation step (parallel for all experiments)
+        self.state = method_kiwiGym.simulate_parallel(
+            self.time_interval,
+            self.state,
+            self.control_inputs,
+            self.model_parameters,
+            self.feed_profiles_history,
+        )
+        # Advance current time to the end of the interval
+        self.current_time = self.time_interval[1]
+
+        ################ Construct observation vector from new state samples
+        if len(self.observation) == 0:
+            state_obs = np.zeros([self.control_inputs[0][0] * (4 + 1)])
         else:
-            XX_obs=np.array(self.obs)
-            
-        XX_obs=XX_obs[:,None]
-        x3=[]
-        for i1 in range(self.uu[0][0]): 
-            for i2 in [0,3]:
-                if i2==0:
-                    t1=np.array(self.DD_historic[i1]['time_sample'])
-                else:
-                    t1=np.array(self.DD_historic[i1]['time_sensor'])
-                    
-                x1=np.array(XX_plus1['sample'][i1][i2])
-                t1b=t1[t1<=self.time_interval[1]]
-                x1b=x1[(t1b>self.time_interval[0]) & (t1b<=self.time_interval[1])]
-                
-                if i2==3:
-                    x1b=np.array([np.min(x1b)])
+            state_obs = np.array(self.observation)
 
-                x2=x1b[:,None]
-    
-                if len(x3)==0:
-                    x3=x2
-                else:
-                    x3=np.vstack((x3,x2))
+        state_obs = state_obs[:, None]
+        stacked_measurements = []
+        for exp_idx in range(self.control_inputs[0].num_experiments):
+            # We only include channels 0 (Biomass) and 3 (DOT) in the observation
+            if self.minimal_observation:
+                for measurement_channel in [0, 3]:
+                    if measurement_channel == 0:
+                        time_points = np.array(self.feed_profiles_history[exp_idx]['time_sample'])
+                    else:
+                        time_points = np.array(self.feed_profiles_history[exp_idx]['time_sensor'])
 
-        XX_obs=x3
-        self.obs=XX_obs.flatten()#.tolist()
-        ################
-        #Update time interval, terminated state and calculate reward
-        self.time_interval=np.array([self.time_current,self.time_current+self.time_step])
 
-        if self.time_current>=self.time_final:
-            self.terminated=True
-            
-            n_sample=len(self.DD[0]['time_sample'])
-            n_sensor=len(self.DD[0]['time_sensor'])
-            sd_meas=np.array(([.2]*n_sample+[.2]*n_sample+[.5]*n_sample+[5]*n_sensor+[20]*n_sample)*1)  #*n_exp
-            C2=np.diag(sd_meas**2)
 
-            
-            # #Biomass 
-            XX,DIV_min=method_kiwiGym.calculate_DIV(np.array([0,self.time_final]),self.XX0,self.uu,self.TH_param,self.DD_historic,C2)
+                    values = np.array(self.state['sample'][exp_idx][measurement_channel])
+                    # print(values)
+                    # restrict to values within the current interval
+                    time_points_in_window = time_points[time_points <= self.time_interval[1]]
+                    values_in_window = values[
+                        (time_points_in_window > self.time_interval[0])
+                        & (time_points_in_window <= self.time_interval[1])
+                    ]
 
-            dot_min=min(XX['sample'][0][3])
+                    # For DOT we store a single aggregated value (minimum over the interval)
+                    if measurement_channel == 3:
+                        values_in_window = np.array([np.min(values_in_window)])
 
-            if dot_min<20:
-                DIV_constrain=((20-dot_min)*.05+1)**2
+                    values_column = values_in_window[:, None]
+
+                    if len(stacked_measurements) == 0:
+                        stacked_measurements = values_column
+                    else:
+                        stacked_measurements = np.vstack((stacked_measurements, values_column))
+
             else:
-                DIV_constrain=1
-                
-            DIV_constr=np.array(DIV_constrain)
-            DIV_calculated=DIV_min/DIV_constr
-            DIV_normalized=(DIV_calculated-7.065)/7.065
-            self.reward=DIV_normalized
-            
+                # gather measurements from the last observation_horizon
+                # time_points = np.array(self.feed_profiles_history[exp_idx]['time_sample'])
+                # biomass_ = np.array(self.state['sample'][exp_idx][0])  # Biomass
+                # biomass_measurements = biomass_[
+                #     np.logical_and(
+                #         time_points > (self.current_time - self.observation_horizon),
+                #         time_points <= self.current_time,
+                #     )
+                # ]
+                # time_points = np.array(self.feed_profiles_history[exp_idx]['time_sensor'])
+                # dot_ = np.array(self.state['sample'][exp_idx][3])  # DOT
+                # dot_measurements = dot_[
+                #     np.logical_and(
+                #         time_points > (self.current_time - self.observation_horizon),
+                #         time_points <= self.current_time,
+                #     )
+                # ]
+                # stacked_measurements = np.concatenate([biomass_measurements, dot_measurements])
+                raise NotImplementedError("Full observation mode not implemented yet.")
 
-            print("reward: ",self.reward,"Biomass: ",DIV_min,"Const: ", DIV_constrain)
+        state_obs = stacked_measurements
+        self.observation = state_obs.flatten()
+        ################
+        # Update time interval, compute termination and reward if finished
+        self.time_interval = np.array([self.current_time, self.current_time + self.time_step])
+
+        if self.current_time >= self.final_time:
+            self.terminated = True
+
+            n_sample = len(self.feed_profiles[0]['time_sample'])
+            n_sensor = len(self.feed_profiles[0]['time_sensor'])
+            sd_meas = np.array(([.2] * n_sample + [.2] * n_sample + [.5] * n_sample + [5] * n_sensor + [20] * n_sample) * 1)
+            C2 = np.diag(sd_meas ** 2)
+
+            # Compute DIV objective (biomass and constraints)
+            state, DIV_min = method_kiwiGym.calculate_DIV(np.array([0, self.final_time]), self.initial_state_template, self.control_inputs, self.model_parameters, self.feed_profiles_history, C2)
+
+            dot_min = min(state['sample'][0][3])
+
+            if dot_min < 20:
+                DIV_constrain = ((20 - dot_min) * .05 + 1) ** 2
+            else:
+                DIV_constrain = 1
+
+            DIV_constr = np.array(DIV_constrain)
+            DIV_calculated = DIV_min / DIV_constr
+            DIV_normalized = (DIV_calculated - 7.065) / 7.065
+            self.reward = DIV_normalized
+
+            print("reward: ", self.reward, "Biomass: ", DIV_min, "Constrain: ", DIV_constrain)
 
         else:
-            self.terminated=False
-            self.reward=0
-        return self.obs, self.reward, self.terminated#, 
+            self.terminated = False
+            self.reward = 0
+        return self.observation, self.reward, self.terminated

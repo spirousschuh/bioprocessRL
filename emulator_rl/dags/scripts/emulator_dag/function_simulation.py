@@ -23,18 +23,18 @@ def function_simulation(ts0,Xo0,u0,THs,D0={}):
     Feed_pulse_all=np.array(D0['Feed_pulse'])
     
     t_u=time_pulse_all[(time_pulse_all>=ts_start) & (time_pulse_all<=ts_end)]
-    uu=Feed_pulse_all[(time_pulse_all>=ts_start) & (time_pulse_all<=ts_end)]
+    control_inputs=Feed_pulse_all[(time_pulse_all>=ts_start) & (time_pulse_all<=ts_end)]
 
     if len(t_u)==0:
         t_u=np.array([ts_start,ts_end])
-        uu=np.array([0,0])
+        control_inputs=np.array([0,0])
     else:
         if ts_start<t_u[0]:
             t_u=np.append(ts_start,t_u)
-            uu=np.append(0,uu)
+            control_inputs=np.append(0,control_inputs)
         if ts_end>t_u[-1]:
             t_u=np.append(t_u,ts_end)
-            uu=np.append(uu,0)
+            control_inputs=np.append(control_inputs,0)
 
     Xo1=Xo0.copy()
     
@@ -45,9 +45,9 @@ def function_simulation(ts0,Xo0,u0,THs,D0={}):
     ni=0
     
     
-    for i in uu[:-1]:
+    for i in control_inputs[:-1]:
         ts1=np.linspace(t_u[ni],t_u[ni+1],5+1)
-        Xo1[1]=Xo1[1]+uu[ni]*1e-6*u0[0]/0.01
+        Xo1[1]=Xo1[1]+control_inputs[ni]*1e-6*u0[0]/0.01
         t,y=intM(ts1,Xo1,u0,TH1)
         Xo1=y[:,-1].copy()
 
@@ -141,11 +141,11 @@ def odeFB(t,Xo,THo,u):
        dXv=(mu)*Xv
        dS=-(qs)*Xv
        dA=qap*Xv-qac*Xv
-       dDOT=k_sensor*(DOT_ss-DOT)
+       feed_profilesOT=k_sensor*(DOT_ss-DOT)
        dP=q_prod*Xv
        dmu_m=(mu-mu_m)/(.167)
        
-       dX=np.array([dXv,dS,dA,dDOT,dP,dmu_m])
+       dX=np.array([dXv,dS,dA,feed_profilesOT,dP,dmu_m])
        return dX
 # %%     
 def intM(ts0,Xo0,u0,TH0):    

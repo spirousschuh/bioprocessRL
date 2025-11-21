@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bioprocessRL"
+version = "0.1.0"
+description = "A package for reinforcement learning in bioprocesses"
+readme = "readme.md"
+license = { file = "LICENSE" }
+authors = [
+    { name = "Your Name", email = "your.email@example.com" }
+]
+dependencies = [
+    "torch",
+    "torchvision",
+    "torchaudio",
+    "stable-baselines3",
+    "scipy",
+    "tensorboard",
+    "seaborn",
+    "optuna",
+]
+
+[project.urls]
+homepage = "https://github.com/spirousschuh/bioprocessRL"
+repository = "https://github.com/spirousschuh/bioprocessRL"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = [
+    "Case1",
+#    "Case2", "Case3",
+]
+exclude = ["test*"]

@@ -14,7 +14,7 @@ def create_input_from_db(row_mbrs, db_output, config):
     actions = 1+np.transpose(np.array([config["mbrs_actions"][str(mbr)] for mbr in row_mbrs]))
 
     e_vector = np.array([current_time - 1*0])
-    d_vector = np.concatenate((actions.flatten(), np.tile([0], (config["time_final"] - current_time) * config["number_mbr"])))
+    d_vector = np.concatenate((actions.flatten(), np.tile([0], (config["final_time"] - current_time) * config["num_experiments"])))
     y_vector = np.array([])
 
     # add all the measurements to the vector (including batch phase)
@@ -36,17 +36,17 @@ def create_input_from_db(row_mbrs, db_output, config):
 
         y_vector = np.concatenate((y_vector, mbr_measurements))
 
-    # add zeros to y_vector to complete the time_final (current time + 1: because delay in measurements)
-    y_vector = np.concatenate((y_vector, np.tile([0]*len(config['species']), (config["time_final"] - current_time + 1) * config["number_mbr"])))
+    # afeed_profiles zeros to y_vector to complete the final_time (current time + 1: because delay in measurements)
+    y_vector = np.concatenate((y_vector, np.tile([0]*len(config['species']), (config["final_time"] - current_time + 1) * config["num_experiments"])))
 
     # normalize
     vector = np.concatenate([e_vector, d_vector, y_vector.flatten()])
 
     normalize_vector = np.concatenate((
-        np.array([config["time_final"]]),
-        np.tile([21], (config["time_final"] - config["time_batch"]) * config["number_mbr"]), 
-        # np.tile([20,  105], config["time_final"] * config["number_mbr"])
-        np.tile(config['normalization_vector'], config["time_final"] * config["number_mbr"])
+        np.array([config["final_time"]]),
+        np.tile([21], (config["final_time"] - config["time_batch"]) * config["num_experiments"]), 
+        # np.tile([20,  105], config["final_time"] * config["num_experiments"])
+        np.tile(config['normalization_vector'], config["final_time"] * config["num_experiments"])
 
     ))
 
