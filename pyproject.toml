@@ -18,7 +18,8 @@ dependencies = [
     "stable-baselines3",
     "scipy",
     "tensorboard",
-    "seaborn"
+    "seaborn",
+    "optuna",
 ]
 
 [project.urls]
@@ -31,3 +32,4 @@ include = [
     "Case1",
 #    "Case2", "Case3",
 ]
+exclude = ["test*"]

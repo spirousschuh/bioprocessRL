@@ -35,6 +35,8 @@ def test_short_training_run(tmp_path):
         save_path=str(save_path),
         checkpoint_freq=50,
         eval_freq=50,
+        observation_horizon=1,
+        time_step=1.0,
     )
 
     env_id = "kiwiGym-CS1"
@@ -75,6 +77,8 @@ def test_observation_ecoli_training(tmp_path):
         save_path=str(save_path),
         checkpoint_freq=50,
         eval_freq=50,
+        observation_horizon=1,
+        time_step=1.0,
     )
 
     env_id = 'ObservationEcoli-v0'

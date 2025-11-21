@@ -183,7 +183,7 @@ class kiwiGym:
             feed_profiles_to_apply = deepcopy(self.feed_profiles_history)
 
             action_values = action_step
-            action_delay = 1  # time offset used when mapping pulses to actions
+            action_delay = 0.5  # time offset used when mapping pulses to actions
             for exp_idx in range(self.control_inputs[0].num_experiments):
                 t_pulse = np.array(feed_profiles_to_apply[exp_idx]['time_pulse'])
                 feed_ref = np.array(feed_profiles_to_apply[exp_idx]['Feed_pulse'])

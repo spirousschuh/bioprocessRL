@@ -52,6 +52,7 @@ class kiwiGymEnv_CS1(gym.Env):
             random_ode_param_variance=0.33,
             render_mode=None,
             sample_offsets=None,
+            **kwargs,
     ):
         """Create the Gym wrapper and build observation/action spaces.
 

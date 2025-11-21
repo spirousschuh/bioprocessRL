@@ -82,6 +82,15 @@ class ObservationEcoliEnv(gym.Env):
         self.model_parameters = np.array(
             initial_model_parameters if initial_model_parameters is not None else DEFAULT_ODE_PARAMETERS
         )
+
+        self.base_model_parameters = (
+            np.array(initial_model_parameters)
+            if initial_model_parameters is not None
+            else np.array(DEFAULT_ODE_PARAMETERS)
+        ).astype(float)
+        # this will hold per-episode parameters
+        self.model_parameters = self.base_model_parameters.copy()
+
         self.initial_states = np.array(DEFAULT_INITIAL_STATES)
         self.state = {}
 
@@ -106,7 +115,7 @@ class ObservationEcoliEnv(gym.Env):
         self.observation_upper_bound = np.concatenate([
             [self.final_time],
             20. * np.ones(observation_horizon),  # Biomass,
-            100. * np.ones(int(sampling_times_per_hour * observation_horizon)), # DOT,
+            101. * np.ones(int(sampling_times_per_hour * observation_horizon)), # DOT,
         ])
         self.observation_space = spaces.Box(
             low=0., high=1., shape=self.observation_upper_bound.shape, dtype=np.float64
@@ -139,7 +148,8 @@ class ObservationEcoliEnv(gym.Env):
         # --- Randomize ODE parameters ---
         if self.random_ode_param_variance > 0.0:
             scale = self.random_ode_param_variance
-            self.model_parameters = self.model_parameters * self.np_random.gamma(1. / scale, scale, len(self.model_parameters))
+            factors = self.np_random.gamma(1. / scale, scale, len(self.model_parameters))
+            self.model_parameters = self.base_model_parameters * factors
 
         # --- Randomize initial states ---
         if self.random_initial_state_variance > 0.0:
@@ -218,7 +228,7 @@ class ObservationEcoliEnv(gym.Env):
         )
         self.current_time = self.time_interval[1]
 
-        # --- Construct observation ---
+        # --- Construct observations ---
         measurements = []
         for channel, is_sensor in [(0, False), (3, True)]: # Biomass, DOT
             values = np.array(self.state['sample'][0][channel])
