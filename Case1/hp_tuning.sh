@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 
+
+# Increase the open file limit for this script
+ulimit -n 8196
+
 # Run Optuna hyperparameter tuning with all arguments explicitly provided
 
 python hp_tuning.py \
