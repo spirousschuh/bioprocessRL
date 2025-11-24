@@ -8,13 +8,14 @@ ulimit -n 8196
 
 python hp_tuning.py \
   --env-id ObservationEcoli-v0 \
-  --n-eval-episodes 10 \
-  --n-parallel-envs 40 \
-  --n-timesteps 1000000 \
+  --n-eval-episodes 50 \
+  --n-parallel-envs 50 \
+  --n-timesteps 500000 \
   --device cpu \
   --max-observation-horizon 12 \
   --max-random-ode-param-variance 2. \
   --max-random-initial-state-variance 2. \
+  --max-step-reward-weight 0.05 \
   --time-step 1.0 \
   --log-dir /tmp/optuna_logs/ \
   --eval-freq 20000 \

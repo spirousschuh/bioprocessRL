@@ -123,9 +123,9 @@ class ObservationEcoliEnv(gym.Env):
         # --- Reward Configuration ---
         # Default weights: High penalty for DOT, moderate reward for biomass/product gain
         self.reward_weights = reward_weights if reward_weights else {
-            'biomass_gain': 1e-3,  # Scale up small product changes
-            'dot_penalty': 1e-3,  # Multiplier for the violation magnitude
-            'acetate_penalty': 0.0  # Optional: set to >0 to discourage by-product
+            'biomass_gain': 0.,  # Scale up small product changes
+            'dot_penalty': 0.,  # Multiplier for the violation magnitude
+            'acetate_penalty': 0.  # acetate accumulation penalty
         }
 
         # self.observation_horizons_slices = {
@@ -143,7 +143,8 @@ class ObservationEcoliEnv(gym.Env):
             101. * np.ones(int(sampling_times_per_hour * observation_horizon)), # DOT,
         ])
         self.observation_space = spaces.Box(
-            low=0., high=1., shape=self.observation_upper_bound.shape, dtype=np.float64
+            low=0.,
+            high=self.observation_upper_bound, shape=self.observation_upper_bound.shape, dtype=np.float64
         )
 
         # --- Feed and Control Profiles ---

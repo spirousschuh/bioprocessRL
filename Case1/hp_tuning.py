@@ -41,11 +41,7 @@ class SyncEvalCallback(BaseCallback):
         self.eval_env = eval_env
 
     def _on_step(self) -> bool:
-        return True
-
-    def _on_event(self) -> bool:
-        # This method is called by EvalCallback before evaluation starts
-        # We sync the Moving Average statistics here
+        # Sync the Moving Average statistics here
         if hasattr(self.train_env, 'obs_rms') and hasattr(self.eval_env, 'obs_rms'):
             self.eval_env.obs_rms = deepcopy(self.train_env.obs_rms)
         return True
@@ -64,12 +60,7 @@ class TrialEvalCallback(EvalCallback):
         )
 
         # If we have a training env, we create a sync callback
-        callback_on_new_best = None
         if train_env_to_sync is not None:
-            # We simply pass the synchronization logic to the 'callback_after_eval'
-            # or we can insert it into the evaluation loop.
-            # Actually, the cleanest way in SB3 is to use the `callback` argument
-            # of EvalCallback which runs *before* eval.
             self.sync_cb = SyncEvalCallback(train_env_to_sync, eval_env)
         else:
             self.sync_cb = None
@@ -84,17 +75,22 @@ class TrialEvalCallback(EvalCallback):
             verbose=verbose,
             n_eval_episodes=n_eval_episodes,
             callback_after_eval=early_stop_cb,
-            callback=self.sync_cb  # <--- This runs before every evaluation
+            # The 'callback' argument is removed from here
         )
         self.trial = trial
         self.last_mean_reward = -float('inf')
         self.is_pruned = False
 
     def _on_step(self) -> bool:
+        # Manually trigger the synchronization before evaluation
+        if self.sync_cb is not None and self.eval_freq > 0 and self.n_calls % self.eval_freq == 0:
+            self.sync_cb._on_step()
+
         continue_training = super()._on_step()
         if not continue_training:
             return False
 
+        # This part is for Optuna pruning, it should run after evaluation
         if self.eval_freq > 0 and self.n_calls % self.eval_freq == 0:
             self.trial.report(self.last_mean_reward, self.num_timesteps)
             if self.trial.should_prune():
@@ -102,7 +98,6 @@ class TrialEvalCallback(EvalCallback):
                 print(f"Trial {self.trial.number} pruned at step {self.num_timesteps}.")
                 return False
         return True
-
 
 def sample_ppo_hyperparameters(trial: optuna.Trial, env_args: Dict[str, Any], fixed_gamma: float) -> Dict[str, Any]:
     """Samples hyperparameters. NOTE: Gamma is now fixed/passed in."""
@@ -140,7 +135,11 @@ def objective(trial: optuna.Trial, args: argparse.Namespace) -> float:
 
     # Sample other environment vars
     observation_horizon = trial.suggest_int('observation_horizon', 1, args.max_observation_horizon)
-
+    step_reward_weight = trial.suggest_float(
+        'step_reward_weight',
+        0.0,
+        args.max_step_reward_weight,
+    )
 
     env_kwargs = {
         'random_ode_param_variance': trial.suggest_float('random_ode_param_variance', 0.0,
@@ -149,6 +148,11 @@ def objective(trial: optuna.Trial, args: argparse.Namespace) -> float:
                                                              args.max_random_initial_state_variance),
         'observation_horizon': observation_horizon,
         'time_step': args.time_step,
+        'reward_weights': {
+            'biomass_gain': step_reward_weight,  # Scale up small product changes
+            'dot_penalty': step_reward_weight,  # Multiplier for the violation magnitude
+            'acetate_penalty': 0.  # acetate accumulation penalty
+        }
     }
 
     # 2. CREATE TRAINING ENV
@@ -170,9 +174,14 @@ def objective(trial: optuna.Trial, args: argparse.Namespace) -> float:
         'random_initial_state_variance': args.evaluation_initial_state_variance,
         'observation_horizon': observation_horizon,
         'time_step': args.time_step,
+
     }
-    eval_env = make_vec_env(env_id, n_envs=args.num_evaluation_envs, vec_env_cls=SubprocVecEnv,
-                            env_kwargs=eval_env_kwargs)
+    eval_env = make_vec_env(
+        env_id,
+        n_envs=args.num_evaluation_envs,
+        vec_env_cls=SubprocVecEnv,
+        env_kwargs=eval_env_kwargs,
+    )
 
     # WRAP EVAL ENV
     eval_env = VecNormalize(
@@ -284,6 +293,14 @@ def main():
         default=0.5,
         help="Maximum variance for perturbing the initial states to explore.",
     )
+    parser.add_argument(
+        "--max-step-reward-weight",
+        dest="max_step_reward_weight",
+        type=float,
+        default=0.01,
+        help="Maximum of the factor of between step rewards",
+    )
+
     parser.add_argument(
         "--evaluation-ode-parameter-variance",
         dest="evaluation_ode_parameter_variance",
