@@ -85,7 +85,7 @@ def sample_ppo_hyperparameters(trial: optuna.Trial, env_args: Dict[str, Any]) ->
     ent_coef = trial.suggest_float('ent_coef', 1e-6, 5e-2, log=True)
 
     # Architecture
-    num_neurons = trial.suggest_int('num_neurons', 32, 256, step=32)
+    num_neurons = trial.suggest_int('num_neurons', 64, 512, step=64)
 
     # Policy kwargs are passed as a dictionary
     policy_kwargs = dict(net_arch=[num_neurons, num_neurons])
@@ -147,10 +147,11 @@ def objective(trial: optuna.Trial, args: argparse.Namespace) -> float:
     )
     eval_env = make_vec_env(
         env_id,
-        n_envs=2,
+        n_envs=args.num_evaluation_envs,
+        vec_env_cls=SubprocVecEnv,
         env_kwargs={
-            'random_ode_param_variance': 0.0,
-            'random_initial_state_variance': 0.0,
+            'random_ode_param_variance': args.evaluation_ode_parameter_variance,
+            'random_initial_state_variance': args.evaluation_initial_state_variance,
             'observation_horizon': observation_horizon,
             'time_step': args.time_step,
         },
@@ -271,6 +272,27 @@ def main():
         type=float,
         default=0.5,
         help="Maximum variance for perturbing the initial states to explore.",
+    )
+    parser.add_argument(
+        "--evaluation-ode-parameter-variance",
+        dest="evaluation_ode_parameter_variance",
+        type=float,
+        default=0.5,
+        help="ODE parameter variance for evaluation.",
+    )
+    parser.add_argument(
+        "--evaluation-initial-state-variance",
+        dest="evaluation_initial_state_variance",
+        type=float,
+        default=0.5,
+        help="Initial state variance for the evaluation environments.",
+    )
+    parser.add_argument(
+        "--num-evaluation-envs",
+        dest="num_evaluation_envs",
+        type=int,
+        default=10,
+        help="How many evaluation environment should be used.",
     )
     parser.add_argument(
         "--time-step",

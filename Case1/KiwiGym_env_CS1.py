@@ -20,7 +20,7 @@ import numpy as np
 
 from Case1.kiwiGym_CS1 import kiwiGym
 from Case1.kiwiGym_CS1 import DEFAULT_ODE_PARAMETERS
-from kiwiGym_CS1 import DEFAULT_INITIAL_STATES
+from Case1.kiwiGym_CS1 import DEFAULT_INITIAL_STATES
 
 # %%
 register(

@@ -94,6 +94,21 @@ class ObservationEcoliEnv(gym.Env):
         self.initial_states = np.array(DEFAULT_INITIAL_STATES)
         self.state = {}
 
+        # --- Randomize ODE parameters ---
+        if self.random_ode_param_variance > 0.0:
+            scale = self.random_ode_param_variance
+            factors = self.np_random.gamma(1. / scale, scale, len(self.model_parameters))
+            self.model_parameters = self.base_model_parameters * factors
+
+        # --- Randomize initial states ---
+        if self.random_initial_state_variance > 0.0:
+            scale = self.random_initial_state_variance
+            perturbation = self.np_random.gamma(1. / scale, scale, 2)
+            self.randomized_initial_states = self.initial_states.copy()
+            self.randomized_initial_states[:2] *= perturbation
+        else:
+            self.randomized_initial_states = self.initial_states.copy()
+
         # --- Action Space ---
         self.action_values = np.arange(-5, 5.5, 0.5)
         self.action_space = spaces.Discrete(len(self.action_values))
@@ -145,21 +160,6 @@ class ObservationEcoliEnv(gym.Env):
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
 
-        # --- Randomize ODE parameters ---
-        if self.random_ode_param_variance > 0.0:
-            scale = self.random_ode_param_variance
-            factors = self.np_random.gamma(1. / scale, scale, len(self.model_parameters))
-            self.model_parameters = self.base_model_parameters * factors
-
-        # --- Randomize initial states ---
-        if self.random_initial_state_variance > 0.0:
-            scale = self.random_initial_state_variance
-            perturbation = self.np_random.gamma(1. / scale, scale, 2)
-            randomized_initial_states = self.initial_states.copy()
-            randomized_initial_states[:2] *= perturbation
-        else:
-            randomized_initial_states = self.initial_states.copy()
-
         # --- Reset simulation state ---
         self.current_time = 0
         self.time_interval = np.array([0, self.time_step])
@@ -167,7 +167,7 @@ class ObservationEcoliEnv(gym.Env):
         self.terminated = False
 
         initial_state_template = {'t': 0, 'state': {}, 'sample': {}}
-        initial_state_template['state'][0] = randomized_initial_states
+        initial_state_template['state'][0] = self.randomized_initial_states
         initial_state_template['sample'][0] = {j: [] for j in range(5)}
         self.state = initial_state_template
         self.initial_state_template = deepcopy(initial_state_template)
