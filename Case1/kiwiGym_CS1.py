@@ -287,7 +287,14 @@ class kiwiGym:
             C2 = np.diag(sd_meas ** 2)
 
             # Compute DIV objective (biomass and constraints)
-            state, DIV_min = method_kiwiGym.calculate_DIV(np.array([0, self.final_time]), self.initial_state_template, self.control_inputs, self.model_parameters, self.feed_profiles_history, C2)
+            state, DIV_min = method_kiwiGym.calculate_DIV(
+                np.array([0, self.final_time]),
+                self.initial_state_template,
+                self.control_inputs,
+                self.model_parameters,
+                self.feed_profiles_history,
+                C2,
+            )
 
             dot_min = min(state['sample'][0][3])
 

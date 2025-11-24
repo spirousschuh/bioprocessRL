@@ -65,7 +65,7 @@ class ObservationEcoliEnv(gym.Env):
             sampling_times_per_hour=25,
             sample_offset=0.99,
             observation_horizon: int=1,
-
+            reward_weights: dict = None,
     ):
         super().__init__()
 
@@ -110,12 +110,22 @@ class ObservationEcoliEnv(gym.Env):
             self.randomized_initial_states = self.initial_states.copy()
 
         # --- Action Space ---
-        self.action_values = np.arange(-5, 5.5, 0.5)
+        # Creates discrete steps: [0.5, 0.55, 0.6, ... 1.0, ... 1.45, 1.5]
+        self.action_values = np.arange(0.5, 1.55, 0.05)
         self.action_space = spaces.Discrete(len(self.action_values))
 
+        self.sampling_times_per_hour = sampling_times_per_hour
         self.observation_lengths = {
             0: observation_horizon, # Biomass
             3: int(sampling_times_per_hour * observation_horizon), # DOT
+        }
+
+        # --- Reward Configuration ---
+        # Default weights: High penalty for DOT, moderate reward for biomass/product gain
+        self.reward_weights = reward_weights if reward_weights else {
+            'biomass_gain': 1e-3,  # Scale up small product changes
+            'dot_penalty': 1e-3,  # Multiplier for the violation magnitude
+            'acetate_penalty': 0.0  # Optional: set to >0 to discourage by-product
         }
 
         # self.observation_horizons_slices = {
@@ -147,7 +157,7 @@ class ObservationEcoliEnv(gym.Env):
         feed_vals = (32.406) * mu_ref * np.exp(mu_ref * (self.pulse_times - self.pulse_times[0]))
         feed_vals = np.round(feed_vals * 2) / 2
         feed_vals[feed_vals < 5] = 5
-        feed_vals[3] = 0.
+
         self.feed_profiles = {0: {
             'time_pulse': self.pulse_times.tolist(),
             'Feed_pulse': feed_vals.tolist(),
@@ -184,41 +194,127 @@ class ObservationEcoliEnv(gym.Env):
             ] = raw_obs
         self.obs = obs_array
 
+        # --- Initialize Reward Trackers ---
+        # We need to know the "previous" state to calculate the "change" (delta)
+        # Index 0 is bimass, Index 2 is Acetate (By-product) based on DEFAULT_INITIAL_STATES
+        if 'sample' in self.state and 4 in self.state['sample'][0]:
+            # Get the initial product concentration (likely 0)
+            self.last_biomass = self.state['sample'][0][0][-1]
+            self.last_acetate = self.state['sample'][0][2][-1]
+        else:
+            self.last_biomass = 0.0
+            self.last_acetate = 0.0
+
         return self.obs / self.observation_upper_bound, {}
 
     def step(self, action):
         # --- Apply action and step simulation ---
         applied_action_value = self.action_values[action]
-        raw_obs, reward, terminated = self._perform_action(applied_action_value)
+        raw_obs, _, terminated = self._perform_action(applied_action_value)
+
+        # --- Calculate Step-wise Reward (Dense) ---
+        # We calculate this BEFORE the final reward overwrites it
+        step_reward = self._calculate_step_reward()
 
         # --- Update observation array ---
         obs_array = self.obs
         obs_array[0] = self.current_time
-
         obs_array[slice(1, 1 + sum(self.observation_lengths.values()))] = raw_obs
         self.obs = obs_array
 
         if self.render_mode == 'human' and terminated:
             self.render()
 
-        normalized_obs = obs_array / self.observation_upper_bound
-        return normalized_obs, reward, terminated, False, {}
+        # Combine step reward with final reward if terminated
+        total_reward = step_reward
+        if terminated:
+            # We add the final evaluation metric to the last step
+            total_reward += self._calculate_final_reward()
 
-    def _perform_action(self, action_step):
-        # --- Apply feed changes ---
-        feed_profiles_to_apply = deepcopy(self.feed_profiles_history)
-        action_delay = 1
+        return obs_array, total_reward, terminated, False, {}
+
+    def _calculate_step_reward(self):
+        """
+        Calculates a dense reward based on the immediate change in state.
+        """
+        # Get latest values from the simulation state
+        # Structure: self.state['sample'][experiment_index][channel_index]
+        # Channels: 0=Biomass, 2=Acetate, 3=DOT, 4=Product
+
+        current_biomass = self.state['sample'][0][0][-1]
+        current_acetate = self.state['sample'][0][2][-1]
+        min_current_dot = np.min(self.state['sample'][0][3][-self.sampling_times_per_hour:  ])
+
+        # 1. Product Reward (The "Carrot")
+        # Reward the INCREASE in product, not the absolute value.
+        # This prevents the agent from just maintaining a high state without improving.
+        delta_biomass = current_biomass - self.last_biomass
+
+        # 2. DOT Penalty (The "Stick")
+        # If DOT < 20, penalty increases linearly with the violation.
+        # Example: DOT=19 -> Penalty=1.0 * weight; DOT=10 -> Penalty=10.0 * weight
+        dot_violation = 0.0
+        if min_current_dot < 20.0:
+            dot_violation = (20.0 - min_current_dot)
+
+        # 3. Optional: Acetate Penalty
+        # Penalize accumulation of acetate (overflow metabolism)
+        delta_acetate = max(0, current_acetate - self.last_acetate)
+
+        # Calculate total weighted reward
+        reward = (delta_biomass * self.reward_weights['biomass_gain']) - \
+                 (dot_violation * self.reward_weights['dot_penalty']) - \
+                 (delta_acetate * self.reward_weights['acetate_penalty'])
+
+        # Update trackers for next step
+        self.last_biomass = current_biomass
+        self.last_acetate = current_acetate
+
+        return reward
+
+    def _calculate_final_reward(self):
+        n_sample = len(self.feed_profiles[0]['time_sample'])
+        n_sensor = len(self.feed_profiles[0]['time_sensor'])
+        sd_meas = np.array(([.2] * n_sample + [.2] * n_sample + [.5] * n_sample + [5] * n_sensor + [20] * n_sample))
+        C2 = np.diag(sd_meas ** 2)
+
+        state, div_min = method_kiwiGym.calculate_DIV(
+            np.array([0, self.final_time]), self.initial_state_template, self.control_inputs,
+            self.model_parameters, self.feed_profiles_history, C2
+        )
+
+        dot_min = min(state['sample'][0][3])
+        div_constrain = ((20 - dot_min) * .05 + 1) ** 2 if dot_min < 20 else 1.
+        div_calculated = div_min / div_constrain
+        return (div_calculated - 7.065) / 7.065
+
+    def _perform_action(self, action_multiplier):
+        # 1. ALWAYS load the clean, original base profile
+        feed_profiles_to_apply = deepcopy(self.initial_feed_profiles)
+
+        # 2. Get the history of changes we have made SO FAR (if you want persistence)
+        # OR, if you simply want the agent to control the *current* moment relative to base:
 
         t_pulse = np.array(feed_profiles_to_apply[0]['time_pulse'])
         feed_ref = np.array(feed_profiles_to_apply[0]['Feed_pulse'])
-        feed_change = np.zeros_like(feed_ref)
 
-        mask = (t_pulse <= (self.time_interval[1] + action_delay)) & (t_pulse >= (self.time_interval[0] + action_delay))
-        feed_change[mask] = action_step
+        action_delay = 1.0  # No delay in this environment
+        # Calculate mask for current time window
+        mask = (t_pulse <= (self.time_interval[1] + action_delay)) & \
+               (t_pulse >= (self.time_interval[0] + action_delay))
 
-        feed_corrected = feed_ref + feed_change
-        feed_corrected[(t_pulse >= t_pulse[0]) & (feed_corrected < 5)] = 5
-        feed_profiles_to_apply[0]['Feed_pulse'] = feed_corrected.tolist()
+        # 1. Apply Multiplicative Action
+        # This automatically scales the influence of the agent based on the feed size
+        feed_current_window = feed_ref[mask] * action_multiplier
+
+        # Update the profile
+        # Note: If you want the agent's changes to persist (Cumulative),
+        # you need to update the *base* profile for future steps,
+        # but for simple adaptive control, momentary multiplication is fine.
+        current_feed_indices = np.where(mask)[0]
+        for i, val in zip(current_feed_indices, feed_current_window):
+            feed_profiles_to_apply[0]['Feed_pulse'][i] = max(5, val)  # Clip min
+
         self.feed_profiles_history = feed_profiles_to_apply
 
         # --- Run simulation step ---
@@ -248,22 +344,6 @@ class ObservationEcoliEnv(gym.Env):
             self.terminated = False
 
         return observation, reward, self.terminated
-
-    def _calculate_final_reward(self):
-        n_sample = len(self.feed_profiles[0]['time_sample'])
-        n_sensor = len(self.feed_profiles[0]['time_sensor'])
-        sd_meas = np.array(([.2] * n_sample + [.2] * n_sample + [.5] * n_sample + [5] * n_sensor + [20] * n_sample))
-        C2 = np.diag(sd_meas ** 2)
-
-        state, div_min = method_kiwiGym.calculate_DIV(
-            np.array([0, self.final_time]), self.initial_state_template, self.control_inputs,
-            self.model_parameters, self.feed_profiles_history, C2
-        )
-
-        dot_min = min(state['sample'][0][3])
-        div_constrain = ((20 - dot_min) * .05 + 1) ** 2 if dot_min < 20 else 1.
-        div_calculated = div_min / div_constrain
-        return (div_calculated - 7.065) / 7.065
 
     def render(self):
         print(f"Time: {self.current_time}, Done: {self.terminated}")
