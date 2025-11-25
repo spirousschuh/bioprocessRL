@@ -78,29 +78,88 @@ class ObservationEcoliEnv(gym.Env):
         self.time_step = time_step
         self.current_time = 0
 
-        # --- Model and State ---
-        self.model_parameters = np.array(
-            initial_model_parameters if initial_model_parameters is not None else DEFAULT_ODE_PARAMETERS
-        )
-
         self.base_model_parameters = (
             np.array(initial_model_parameters)
             if initial_model_parameters is not None
             else np.array(DEFAULT_ODE_PARAMETERS)
         ).astype(float)
-        # this will hold per-episode parameters
+
+        # do *not* randomize here; keep base
         self.model_parameters = self.base_model_parameters.copy()
 
         self.initial_states = np.array(DEFAULT_INITIAL_STATES)
         self.state = {}
 
-        # --- Randomize ODE parameters ---
+        self.action_values = np.arange(0.5, 1.55, 0.05)
+        self.action_space = spaces.Discrete(len(self.action_values))
+
+        self.sampling_times_per_hour = sampling_times_per_hour
+        self.observation_lengths = {
+            0: observation_horizon,
+            3: int(sampling_times_per_hour * observation_horizon),
+        }
+
+        self.reward_weights = reward_weights if reward_weights else {
+            'biomass_gain': 0.,
+            'dot_penalty': 0.,
+            'acetate_penalty': 0.,
+        }
+
+        self.observation_upper_bound = np.concatenate([
+            [self.final_time],
+            20. * np.ones(observation_horizon),
+            101. * np.ones(int(sampling_times_per_hour * observation_horizon)),
+        ])
+        self.observation_space = spaces.Box(
+            low=0.,
+            high=self.observation_upper_bound,
+            shape=self.observation_upper_bound.shape,
+            dtype=np.float64,
+        )
+
+        self.pulse_times = np.arange(time_batch + 5 / 60, self.final_time, 10 / 60)
+        self.sample_offset = sample_offset
+
+        self.control_inputs = {
+            0: method_kiwiGym.ControlInputs(
+                experiment_index=0,
+                num_experiments=self.num_experiments,
+                feed_concentration=200,
+                induction_time=10.,
+                product_switch=0,
+            )
+        }
+
+        feed_vals = (32.406) * mu_ref * np.exp(mu_ref * (self.pulse_times - self.pulse_times[0]))
+        feed_vals = np.round(feed_vals * 2) / 2
+        feed_vals[feed_vals < 5] = 5
+
+        self.feed_profiles = {
+            0: {
+                'time_pulse': self.pulse_times.tolist(),
+                'Feed_pulse': feed_vals.tolist(),
+                'time_sample': np.arange(self.final_time) + self.sample_offset,
+                'time_sensor': np.linspace(
+                    0.04,
+                    self.final_time,
+                    sampling_times_per_hour * round(self.final_time),
+                ),
+            }
+        }
+        self.feed_profiles_history = deepcopy(self.feed_profiles)
+        self.initial_feed_profiles = deepcopy(self.feed_profiles)
+
+    def reset(self, seed=None, options=None):
+        super().reset(seed=seed)
+
+        # randomize ODE parameters per episode using Gymnasium RNG
+        self.model_parameters = self.base_model_parameters.copy()
         if self.random_ode_param_variance > 0.0:
             scale = self.random_ode_param_variance
             factors = self.np_random.gamma(1. / scale, scale, len(self.model_parameters))
-            self.model_parameters = self.base_model_parameters * factors
+            self.model_parameters *= factors
 
-        # --- Randomize initial states ---
+        # randomize initial states per episode
         if self.random_initial_state_variance > 0.0:
             scale = self.random_initial_state_variance
             perturbation = self.np_random.gamma(1. / scale, scale, 2)
@@ -109,69 +168,6 @@ class ObservationEcoliEnv(gym.Env):
         else:
             self.randomized_initial_states = self.initial_states.copy()
 
-        # --- Action Space ---
-        # Creates discrete steps: [0.5, 0.55, 0.6, ... 1.0, ... 1.45, 1.5]
-        self.action_values = np.arange(0.5, 1.55, 0.05)
-        self.action_space = spaces.Discrete(len(self.action_values))
-
-        self.sampling_times_per_hour = sampling_times_per_hour
-        self.observation_lengths = {
-            0: observation_horizon, # Biomass
-            3: int(sampling_times_per_hour * observation_horizon), # DOT
-        }
-
-        # --- Reward Configuration ---
-        # Default weights: High penalty for DOT, moderate reward for biomass/product gain
-        self.reward_weights = reward_weights if reward_weights else {
-            'biomass_gain': 0.,  # Scale up small product changes
-            'dot_penalty': 0.,  # Multiplier for the violation magnitude
-            'acetate_penalty': 0.  # acetate accumulation penalty
-        }
-
-        # self.observation_horizons_slices = {
-        #     0: slice(0, observation_horizon), # Biomass
-        #     3: slice(
-        #         observation_horizon,
-        #         int(sampling_times_per_hour * observation_horizon) + observation_horizon,
-        #     ), # DOT
-        # }
-
-        # --- Observation Space ---
-        self.observation_upper_bound = np.concatenate([
-            [self.final_time],
-            20. * np.ones(observation_horizon),  # Biomass,
-            101. * np.ones(int(sampling_times_per_hour * observation_horizon)), # DOT,
-        ])
-        self.observation_space = spaces.Box(
-            low=0.,
-            high=self.observation_upper_bound, shape=self.observation_upper_bound.shape, dtype=np.float64
-        )
-
-        # --- Feed and Control Profiles ---
-        self.pulse_times = np.arange(time_batch + 5/60, self.final_time, 10/60)
-        self.sample_offset = sample_offset
-
-        self.control_inputs = {0: method_kiwiGym.ControlInputs(
-            experiment_index=0, num_experiments=self.num_experiments,
-            feed_concentration=200, induction_time=10., product_switch=0
-        )}
-        feed_vals = (32.406) * mu_ref * np.exp(mu_ref * (self.pulse_times - self.pulse_times[0]))
-        feed_vals = np.round(feed_vals * 2) / 2
-        feed_vals[feed_vals < 5] = 5
-
-        self.feed_profiles = {0: {
-            'time_pulse': self.pulse_times.tolist(),
-            'Feed_pulse': feed_vals.tolist(),
-            'time_sample': np.arange(self.final_time) + self.sample_offset,
-            'time_sensor': np.linspace(0.04, self.final_time, sampling_times_per_hour * round(self.final_time)),
-        }}
-        self.feed_profiles_history = deepcopy(self.feed_profiles)
-        self.initial_feed_profiles = deepcopy(self.feed_profiles)
-
-    def reset(self, seed=None, options=None):
-        super().reset(seed=seed)
-
-        # --- Reset simulation state ---
         self.current_time = 0
         self.time_interval = np.array([0, self.time_step])
         self.feed_profiles_history = deepcopy(self.initial_feed_profiles)
@@ -183,30 +179,23 @@ class ObservationEcoliEnv(gym.Env):
         self.state = initial_state_template
         self.initial_state_template = deepcopy(initial_state_template)
 
-        # --- Integrate to first pulse to get initial observation ---
         obs_array = np.zeros(self.observation_space.shape, dtype=np.float64)
         pre_pulse_offset = 1
         obs_array[0] = int(self.pulse_times[0] - pre_pulse_offset)
 
         while self.current_time < round(self.pulse_times[0] - pre_pulse_offset):
-            raw_obs, _, _ = self._perform_action([10]) # Use a neutral initial action
-            obs_array[
-                slice(1, 1 + sum(self.observation_lengths.values()))
-            ] = raw_obs
+            raw_obs, _, _ = self._perform_action([10])
+            obs_array[1:1 + sum(self.observation_lengths.values())] = raw_obs
         self.obs = obs_array
 
-        # --- Initialize Reward Trackers ---
-        # We need to know the "previous" state to calculate the "change" (delta)
-        # Index 0 is bimass, Index 2 is Acetate (By-product) based on DEFAULT_INITIAL_STATES
-        if 'sample' in self.state and 4 in self.state['sample'][0]:
-            # Get the initial product concentration (likely 0)
+        if 'sample' in self.state and 4 in self.state['sample'][0] and self.state['sample'][0][0]:
             self.last_biomass = self.state['sample'][0][0][-1]
             self.last_acetate = self.state['sample'][0][2][-1]
         else:
             self.last_biomass = 0.0
             self.last_acetate = 0.0
 
-        return self.obs / self.observation_upper_bound, {}
+        return self.obs, {}
 
     def step(self, action):
         # --- Apply action and step simulation ---

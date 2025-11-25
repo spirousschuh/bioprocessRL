@@ -16,8 +16,6 @@ from optuna.samplers import TPESampler
 from optuna.pruners import MedianPruner
 
 # Environment imports
-import KiwiGym_env_CS1_0
-import KiwiGym_env_CS1
 import Case1.observation_env
 
 # --- Default Global Configuration ---
@@ -49,17 +47,14 @@ class SyncEvalCallback(BaseCallback):
 
 class TrialEvalCallback(EvalCallback):
     """Callback that reports the mean reward to Optuna for pruning."""
-
     def __init__(self, eval_env, trial, train_env_to_sync=None, n_eval_episodes=5,
                  eval_freq=10000, deterministic=True, verbose=0):
-
         early_stop_cb = StopTrainingOnNoModelImprovement(
             max_no_improvement_evals=5,
             min_evals=10,
             verbose=0,
         )
 
-        # If we have a training env, we create a sync callback
         if train_env_to_sync is not None:
             self.sync_cb = SyncEvalCallback(train_env_to_sync, eval_env)
         else:
@@ -75,14 +70,12 @@ class TrialEvalCallback(EvalCallback):
             verbose=verbose,
             n_eval_episodes=n_eval_episodes,
             callback_after_eval=early_stop_cb,
-            # The 'callback' argument is removed from here
         )
+
         self.trial = trial
-        self.last_mean_reward = -float('inf')
         self.is_pruned = False
 
     def _on_step(self) -> bool:
-        # Manually trigger the synchronization before evaluation
         if self.sync_cb is not None and self.eval_freq > 0 and self.n_calls % self.eval_freq == 0:
             self.sync_cb._on_step()
 
@@ -90,7 +83,7 @@ class TrialEvalCallback(EvalCallback):
         if not continue_training:
             return False
 
-        # This part is for Optuna pruning, it should run after evaluation
+        # after super()._on_step(), self.last_mean_reward has been updated
         if self.eval_freq > 0 and self.n_calls % self.eval_freq == 0:
             self.trial.report(self.last_mean_reward, self.num_timesteps)
             if self.trial.should_prune():
@@ -99,20 +92,21 @@ class TrialEvalCallback(EvalCallback):
                 return False
         return True
 
+
+
 def sample_ppo_hyperparameters(trial: optuna.Trial, env_args: Dict[str, Any], fixed_gamma: float) -> Dict[str, Any]:
     """Samples hyperparameters. NOTE: Gamma is now fixed/passed in."""
 
     learning_rate = trial.suggest_float('learning_rate', 1e-5, 1e-3, log=True)
-    n_steps = trial.suggest_int('n_steps', 10, 200, step=10)
-    batch_size = trial.suggest_int('batch_size', 50, 1000, step=50)
+    batch_size = trial.suggest_int('batch_size', 50, 500, step=50)
     ent_coef = trial.suggest_float('ent_coef', 1e-6, 5e-2, log=True)
-    num_neurons = trial.suggest_int('num_neurons', 64, 512, step=64)
+    num_neurons = trial.suggest_int('num_neurons', 64, 1024, step=64)
 
     policy_kwargs = dict(net_arch=[num_neurons, num_neurons])
 
     return {
         "learning_rate": learning_rate,
-        "n_steps": n_steps,
+        "n_steps": 10,
         "batch_size": batch_size,
         "gamma": fixed_gamma,  # <--- Use the pre-sampled gamma
         "ent_coef": ent_coef,
@@ -131,7 +125,8 @@ def objective(trial: optuna.Trial, args: argparse.Namespace) -> float:
 
     # 1. SAMPLE GAMMA FIRST
     # VecNormalize needs gamma to normalize rewards correctly (Ret = R + gamma * Ret_old)
-    gamma = trial.suggest_float('gamma', 0.9, 0.9999, log=True)
+    # gamma = trial.suggest_float('gamma', 0.9, 0.9999, log=True)
+    gamma = 1.0  # Fix gamma to 1.0 for this environment
 
     # Sample other environment vars
     observation_horizon = trial.suggest_int('observation_horizon', 1, args.max_observation_horizon)
@@ -139,13 +134,20 @@ def objective(trial: optuna.Trial, args: argparse.Namespace) -> float:
         'step_reward_weight',
         0.0,
         args.max_step_reward_weight,
+        log=True,
     )
 
     env_kwargs = {
-        'random_ode_param_variance': trial.suggest_float('random_ode_param_variance', 0.0,
-                                                         args.max_random_ode_param_variance),
-        'random_initial_state_variance': trial.suggest_float('random_initial_state_variance', 0.0,
-                                                             args.max_random_initial_state_variance),
+        'random_ode_param_variance': trial.suggest_float(
+            'random_ode_param_variance',
+            0.0,
+            args.max_random_ode_param_variance,
+        ),
+        'random_initial_state_variance': trial.suggest_float(
+            'random_initial_state_variance',
+            0.0,
+            args.max_random_initial_state_variance,
+        ),
         'observation_horizon': observation_horizon,
         'time_step': args.time_step,
         'reward_weights': {
@@ -202,7 +204,12 @@ def objective(trial: optuna.Trial, args: argparse.Namespace) -> float:
         eval_env.close()
         raise
 
-    model = PPO("MlpPolicy", train_env, tensorboard_log=args.log_dir, **model_params)
+    model = PPO(
+        "MlpPolicy",
+        train_env,
+        tensorboard_log=args.log_dir,
+        **model_params,
+    )
 
     # 5. Pass train_env to Callback for Synchronization
     eval_callback = TrialEvalCallback(
