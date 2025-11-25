@@ -156,8 +156,8 @@ def main():
     # args.batch_size = args.n_steps * args.n_parallel
 
     for model_name in [
-        'ObservationEcoli-v0',
-        # "kiwiGym-CS1",
+        # 'ObservationEcoli-v0',
+        "kiwiGym-CS1",
         # "kiwiGym-CS1_0",
     ]:
         start = time.time()
