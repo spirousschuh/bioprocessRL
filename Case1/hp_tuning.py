@@ -132,7 +132,7 @@ def objective(trial: optuna.Trial, args: argparse.Namespace) -> float:
     observation_horizon = trial.suggest_int('observation_horizon', 1, args.max_observation_horizon)
     step_reward_weight = trial.suggest_float(
         'step_reward_weight',
-        0.0,
+        1e-12,
         args.max_step_reward_weight,
         log=True,
     )
