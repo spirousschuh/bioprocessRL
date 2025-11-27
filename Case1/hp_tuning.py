@@ -98,7 +98,7 @@ def sample_ppo_hyperparameters(trial: optuna.Trial, env_args: Dict[str, Any], fi
     """Samples hyperparameters. NOTE: Gamma is now fixed/passed in."""
 
     learning_rate = trial.suggest_float('learning_rate', 1e-5, 1e-3, log=True)
-    batch_size = trial.suggest_int('batch_size', 50, 500, step=50)
+    batch_size = trial.suggest_int('batch_size', 25, 250, step=25)
     ent_coef = trial.suggest_float('ent_coef', 1e-6, 5e-2, log=True)
     num_neurons = trial.suggest_int('num_neurons', 64, 1024, step=64)
 
