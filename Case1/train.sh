@@ -31,5 +31,6 @@ python Train_Case1.py \
   --random-ode-param-variance 0.1 \
   --random-initial-state-variance 0.01 \
   --observation-horizon 2 \
-  --time-step 1.
+  --time-step 1. \
+  --model-name ObservationEcoli-v0
 

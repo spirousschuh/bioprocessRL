@@ -136,7 +136,10 @@ def objective(trial: optuna.Trial, args: argparse.Namespace) -> float:
         args.max_step_reward_weight,
         log=True,
     )
-
+    include_feed_in_observation = trial.suggest_categorical(
+        'include_feed_in_observation',
+        [True, False],
+    )
     env_kwargs = {
         'random_ode_param_variance': trial.suggest_float(
             'random_ode_param_variance',
@@ -154,7 +157,8 @@ def objective(trial: optuna.Trial, args: argparse.Namespace) -> float:
             'biomass_gain': step_reward_weight,  # Scale up small product changes
             'dot_penalty': step_reward_weight,  # Multiplier for the violation magnitude
             'acetate_penalty': 0.  # acetate accumulation penalty
-        }
+        },
+        'include_feed_in_observation': include_feed_in_observation,
     }
 
     # 2. CREATE TRAINING ENV
@@ -176,7 +180,7 @@ def objective(trial: optuna.Trial, args: argparse.Namespace) -> float:
         'random_initial_state_variance': args.evaluation_initial_state_variance,
         'observation_horizon': observation_horizon,
         'time_step': args.time_step,
-
+        'include_feed_in_observation': include_feed_in_observation,
     }
     eval_env = make_vec_env(
         env_id,

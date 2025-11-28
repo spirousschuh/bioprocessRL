@@ -145,6 +145,7 @@ def main():
     parser.add_argument("--save-path", dest="save_path", type=str, default="./saved_models/", help="Path to save models.")
     parser.add_argument("--checkpoint-freq", dest="checkpoint_freq", type=int, default=20000, help="Save a checkpoint every N steps.")
     parser.add_argument("--eval-freq", dest="eval_freq", type=int, default=10000, help="Evaluate the agent every N steps.")
+    parser.add_argument("--model-name", dest="model_name", type=str, default="kiwiGym-CS1", help="The name of the model to be trained.")
 
     args = parser.parse_args()
 
@@ -155,16 +156,12 @@ def main():
     # args.n_steps = step_per_episode * eps_envs
     # args.batch_size = args.n_steps * args.n_parallel
 
-    for model_name in [
-        # 'ObservationEcoli-v0',
-        "kiwiGym-CS1",
-        # "kiwiGym-CS1_0",
-    ]:
-        start = time.time()
-        print(f"--- Starting training for {model_name} ---")
-        train_agent(model_name, args)
-        print(f"--- Finished training for {model_name} ---")
-        print("Time taken: {:.2f} minutes".format((time.time() - start) / 60))
+    model_name = args.model_name
+    start = time.time()
+    print(f"--- Starting training for {model_name} ---")
+    train_agent(model_name, args)
+    print(f"--- Finished training for {model_name} ---")
+    print("Time taken: {:.2f} minutes".format((time.time() - start) / 60))
 
 if __name__ == "__main__":
     main()
