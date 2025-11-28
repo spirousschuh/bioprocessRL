@@ -66,8 +66,11 @@ class ObservationEcoliEnv(gym.Env):
             sample_offset=0.99,
             observation_horizon: int=1,
             reward_weights: dict = None,
+            include_feed_in_observation: bool = False,
     ):
         super().__init__()
+
+        self.include_feed_in_observation = include_feed_in_observation
 
         # --- Configuration ---
         self.num_experiments = 1
@@ -98,6 +101,11 @@ class ObservationEcoliEnv(gym.Env):
             0: observation_horizon,
             3: int(sampling_times_per_hour * observation_horizon),
         }
+        if self.include_feed_in_observation:
+            # 6 pulses per hour (every 10 minutes)
+            self.observation_lengths['feed'] = int(6 * observation_horizon)
+        else:
+            self.observation_lengths['feed'] = 0
 
         self.reward_weights = reward_weights if reward_weights else {
             'biomass_gain': 0.,
@@ -105,11 +113,16 @@ class ObservationEcoliEnv(gym.Env):
             'acetate_penalty': 0.,
         }
 
-        self.observation_upper_bound = np.concatenate([
+        obs_bounds = [
             [self.final_time],
-            20. * np.ones(observation_horizon),
-            101. * np.ones(int(sampling_times_per_hour * observation_horizon)),
-        ])
+            20. * np.ones(self.observation_lengths[0]),
+            101. * np.ones(self.observation_lengths[3]),
+        ]
+        if self.include_feed_in_observation:
+            # Assuming max feed around 100 for observation space bounds
+            obs_bounds.append(100. * np.ones(self.observation_lengths['feed']))
+
+        self.observation_upper_bound = np.concatenate(obs_bounds)
         self.observation_space = spaces.Box(
             low=0.,
             high=self.observation_upper_bound,
@@ -148,6 +161,9 @@ class ObservationEcoliEnv(gym.Env):
         }
         self.feed_profiles_history = deepcopy(self.feed_profiles)
         self.initial_feed_profiles = deepcopy(self.feed_profiles)
+        # Initialize feed history for observation
+
+        self.feed_history = np.zeros(self.observation_lengths["feed"]).tolist()
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
@@ -171,6 +187,8 @@ class ObservationEcoliEnv(gym.Env):
         self.current_time = 0
         self.time_interval = np.array([0, self.time_step])
         self.feed_profiles_history = deepcopy(self.initial_feed_profiles)
+        # Initialize feed history for observation
+        self.feed_history = np.zeros(self.observation_lengths["feed"]).tolist()
         self.terminated = False
 
         initial_state_template = {'t': 0, 'state': {}, 'sample': {}}
@@ -209,7 +227,7 @@ class ObservationEcoliEnv(gym.Env):
         # --- Update observation array ---
         obs_array = self.obs
         obs_array[0] = self.current_time
-        obs_array[slice(1, 1 + sum(self.observation_lengths.values()))] = raw_obs
+        obs_array[1:1 + len(raw_obs)] = raw_obs
         self.obs = obs_array
 
         if self.render_mode == 'human' and terminated:
@@ -288,7 +306,7 @@ class ObservationEcoliEnv(gym.Env):
         t_pulse = np.array(feed_profiles_to_apply[0]['time_pulse'])
         feed_ref = np.array(feed_profiles_to_apply[0]['Feed_pulse'])
 
-        action_delay = 1.0  # No delay in this environment
+        action_delay = 1.0
         # Calculate mask for current time window
         mask = (t_pulse <= (self.time_interval[1] + action_delay)) & \
                (t_pulse >= (self.time_interval[0] + action_delay))
@@ -304,6 +322,7 @@ class ObservationEcoliEnv(gym.Env):
         current_feed_indices = np.where(mask)[0]
         for i, val in zip(current_feed_indices, feed_current_window):
             feed_profiles_to_apply[0]['Feed_pulse'][i] = max(5, val)  # Clip min
+            self.feed_history.append(max(5, val))
 
         self.feed_profiles_history = feed_profiles_to_apply
 
@@ -322,6 +341,13 @@ class ObservationEcoliEnv(gym.Env):
             vals_in_window[-len(values):] = values[-len(vals_in_window):]
 
             measurements.append(vals_in_window)
+
+        if self.include_feed_in_observation:
+            feed_values = np.array(self.feed_history)
+            feed_in_window = np.zeros(self.observation_lengths['feed'])
+            feed_in_window[-len(feed_values):] = feed_values[-len(feed_in_window):]
+            measurements.append(feed_in_window)
+
         observation = np.concatenate(measurements)
 
         # --- Update time and check for termination ---
