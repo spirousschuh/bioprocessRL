@@ -50,6 +50,7 @@ class kiwiGymEnv_CS1(gym.Env):
             num_experiments=1,
             random_initial_state_variance=0.,
             random_ode_param_variance=0.33,
+            ode_param_perturbation_type='gamma',
             render_mode=None,
             sample_offsets=None,
             feed_std=0.0,
@@ -71,6 +72,7 @@ class kiwiGymEnv_CS1(gym.Env):
         )
 
         self.random_ode_param_variance = random_ode_param_variance
+        self.ode_param_perturbation_type = ode_param_perturbation_type
         self.random_initial_state_variance = random_initial_state_variance
         self.feed_std = feed_std
         self.feed_to_zero_probability = feed_to_zero_probability
@@ -126,11 +128,18 @@ class kiwiGymEnv_CS1(gym.Env):
         # the simulation (keeps prior behaviour of the project).
         base_model_parameters = np.array(DEFAULT_ODE_PARAMETERS)
         if self.random_ode_param_variance > 0.0:
-            randomized_model_parameters = base_model_parameters * np.random.gamma(
-                1. / self.random_ode_param_variance,
-                self.random_ode_param_variance,
-                len(base_model_parameters),
-            )
+            if self.ode_param_perturbation_type == "gamma":
+                randomized_model_parameters = base_model_parameters * np.random.gamma(
+                    1. / self.random_ode_param_variance,
+                    self.random_ode_param_variance,
+                    len(base_model_parameters),
+                )
+            elif self.ode_param_perturbation_type == "uniform":
+                randomized_model_parameters = base_model_parameters * np.random.uniform(
+                    1. - self.random_ode_param_variance * 3 ** 0.5,
+                    1. + self.random_ode_param_variance * 3 ** 0.5,
+                    len(base_model_parameters),
+                )
         else:
             randomized_model_parameters = base_model_parameters
 

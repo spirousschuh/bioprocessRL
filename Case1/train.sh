@@ -17,20 +17,22 @@ set -x
 
 python Train_Case1.py \
   --total-timesteps 1000000 \
-  --n-parallel 20 \
+  --n-parallel 40 \
   --learning-rate 3e-4 \
   --ent-coef 0.001 \
   --n-steps 10 \
   --batch-size 160 \
   --device cpu \
   --num-neurons 128 \
-  --log-dir /tmp/log_training \
+  --log-dir ./log_training \
   --save-path ./saved_models/ \
-  --checkpoint-freq 20000 \
-  --eval-freq 10000 \
+  --checkpoint-freq 100000 \
+  --eval-freq 100000 \
   --random-ode-param-variance 0.1 \
+  --ode-param-perturbation-type uniform \
   --random-initial-state-variance 0.01 \
-  --observation-horizon 2 \
+  --feed-std 5.0 \
+  --observation-horizon 10 \
   --time-step 1. \
-  --model-name ObservationEcoli-v0
+  --model-name kiwiGym-CS1
 

@@ -37,9 +37,13 @@ def setup_environment(env_id, args, is_eval=False):
     # Pass custom arguments to the environment constructor
     env_kwargs = {
         'random_ode_param_variance': args.random_ode_param_variance if not is_eval else 0.,
+        'ode_param_perturbation_type': args.ode_param_perturbation_type,
         'random_initial_state_variance': args.random_initial_state_variance if not is_eval else 0.,
         'observation_horizon': args.observation_horizon,
         'time_step': args.time_step,
+        'feed_std': args.feed_std,
+        'feed_to_zero_probability': args.feed_to_zero_probability,
+
     }
 
     return make_vec_env(
@@ -137,6 +141,7 @@ def main():
     # Environment-specific arguments
     parser.add_argument("--observation-horizon", dest="observation_horizon", type=int, default=1)
     parser.add_argument("--random-ode-param-variance", dest="random_ode_param_variance", type=float, default=0., help="Using random_ode_param_variance for sampling random ODE parameters.")
+    parser.add_argument("--ode-param-perturbation-type", dest="ode_param_perturbation_type", type=str, default="uniform", help="How to perturb ODE parameters: 'uniform' or 'gamma'.")
     parser.add_argument("--random-initial-state-variance", dest="random_initial_state_variance", type=float, default=0., help="Variance for perturbing the initial states.")
     parser.add_argument("--time-step", dest="time_step", type=float, default=1., help="Hours between two consecutive actions.")
 
@@ -146,6 +151,10 @@ def main():
     parser.add_argument("--checkpoint-freq", dest="checkpoint_freq", type=int, default=20000, help="Save a checkpoint every N steps.")
     parser.add_argument("--eval-freq", dest="eval_freq", type=int, default=10000, help="Evaluate the agent every N steps.")
     parser.add_argument("--model-name", dest="model_name", type=str, default="kiwiGym-CS1", help="The name of the model to be trained.")
+
+    parser.add_argument("--feed-std", dest="feed_std", type=float, default=0., help="Randomly modify the feed.")
+    parser.add_argument("--feed-to-zero-probability", dest="feed_to_zero_probability", type=float, default=0., help="Probability of feed to zero event.")
+
 
     args = parser.parse_args()
 
