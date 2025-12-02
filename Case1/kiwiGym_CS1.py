@@ -205,8 +205,7 @@ class kiwiGym:
         if feed_std > 0.0:
             for exp_idx in range(self.control_inputs[0].num_experiments):
                 feed_array = np.array(self.feed_profiles_history[exp_idx]['Feed_pulse'])
-                noise_factor = np.random.gamma(1. / feed_std, feed_std, size=feed_array.shape)
-                feed_array_noisy = feed_array * noise_factor
+                feed_array_noisy = feed_array + np.random.normal(0., feed_std, size=feed_array.shape)
                 # Enforce minimum feed of 5 uL after the first pulse time
                 t_pulse = np.array(self.feed_profiles_history[exp_idx]['time_pulse'])
                 feed_array_noisy[(t_pulse >= t_pulse[0]) & (feed_array_noisy < 5)] = 5
