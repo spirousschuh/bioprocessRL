@@ -168,7 +168,7 @@ class kiwiGym:
         print('time: ', self.current_time, ' done: ', self.terminated, 'reward: ', getattr(self, 'reward', None))
 
 # %%    
-    def perform_action(self, action_step=[]):
+    def perform_action(self, action_step=[], feed_std=0.0, feed_to_zero_probability=0.0):
         """Apply an action (feed changes) for the current time interval and advance simulation.
 
         action_step: if left as default (empty list), the reference profile is used; otherwise
@@ -200,6 +200,24 @@ class kiwiGym:
 
         # Save the applied profile as historic
         self.feed_profiles_history = deepcopy(feed_profiles_to_apply)
+
+        # perturb feed profiles with Gaussian noise if specified
+        if feed_std > 0.0:
+            for exp_idx in range(self.control_inputs[0].num_experiments):
+                feed_array = np.array(self.feed_profiles_history[exp_idx]['Feed_pulse'])
+                noise_factor = np.random.gamma(1. / feed_std, feed_std, size=feed_array.shape)
+                feed_array_noisy = feed_array * noise_factor
+                # Enforce minimum feed of 5 uL after the first pulse time
+                t_pulse = np.array(self.feed_profiles_history[exp_idx]['time_pulse'])
+                feed_array_noisy[(t_pulse >= t_pulse[0]) & (feed_array_noisy < 5)] = 5
+                self.feed_profiles_history[exp_idx]['Feed_pulse'] = feed_array_noisy.tolist()
+
+        if feed_to_zero_probability > 0.0:
+            for exp_idx in range(self.control_inputs[0].num_experiments):
+                feed_array = np.array(self.feed_profiles_history[exp_idx]['Feed_pulse'])
+                random_values = np.random.rand(feed_array.shape[0])
+                feed_array_zeroed = np.where(random_values < feed_to_zero_probability, 0.0, feed_array)
+                self.feed_profiles_history[exp_idx]['Feed_pulse'] = feed_array_zeroed.tolist()
 
         # Run the simulation step (parallel for all experiments)
         self.state = method_kiwiGym.simulate_parallel(

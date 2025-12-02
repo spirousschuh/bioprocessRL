@@ -52,6 +52,8 @@ class kiwiGymEnv_CS1(gym.Env):
             random_ode_param_variance=0.33,
             render_mode=None,
             sample_offsets=None,
+            feed_std=0.0,
+            feed_to_zero_probability=0.0,
             **kwargs,
     ):
         """Create the Gym wrapper and build observation/action spaces.
@@ -70,6 +72,8 @@ class kiwiGymEnv_CS1(gym.Env):
 
         self.random_ode_param_variance = random_ode_param_variance
         self.random_initial_state_variance = random_initial_state_variance
+        self.feed_std = feed_std
+        self.feed_to_zero_probability = feed_to_zero_probability
 
         # Allowed discrete action values (feed adjustment set); actions map
         # to indices into this array.
@@ -202,7 +206,11 @@ class kiwiGymEnv_CS1(gym.Env):
         """
         # Map action index to the numeric feed adjustment value and apply
         applied_action_value = self.action_values[action]
-        raw_observation_vector, reward, terminated = self.kiwiGym.perform_action(applied_action_value)
+        raw_observation_vector, reward, terminated = self.kiwiGym.perform_action(
+            applied_action_value,
+            feed_std=self.feed_std,
+            feed_to_zero_probability=self.feed_to_zero_probability,
+        )
 
         # Retrieve the stored observation buffer and update its fields
         obs_array = self.obs
